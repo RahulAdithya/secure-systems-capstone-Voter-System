@@ -1,0 +1,29 @@
+name: "Security Requirement"
+description: Track one assignment requirement
+title: "[REQ] <short name>"
+labels: ["requirement","security"]
+body:
+  - type: input
+    id: reqid
+    attributes: { label: Requirement ID, placeholder: REQ-01 }
+    validations: { required: true }
+  - type: textarea
+    id: desc
+    attributes:
+      label: Requirement Description
+      placeholder: As a <role>, I want <capability> so that <value>.
+    validations: { required: true }
+  - type: dropdown
+    id: priority
+    attributes: { label: Priority, options: [High, Medium, Low] }
+    validations: { required: true }
+  - type: dropdown
+    id: complexity
+    attributes: { label: Complexity, options: [High, Medium, Low] }
+    validations: { required: true }
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance Criteria (SMART)
+      placeholder: Given/When/Then with measurable targets
+    validations: { required: true }
