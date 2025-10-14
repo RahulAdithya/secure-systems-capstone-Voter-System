@@ -28,7 +28,7 @@ jobs:
           cd backend
           . .venv/bin/activate
           python -m pip install --upgrade cyclonedx-bom
-          python -m cyclonedx_py --evidence -o ../sbom.json
+          python -m cyclonedx_py environment --format json --schema-version 1.4 --output ../sbom.json
       - name: Bandit (security)
         run: |
           cd backend
