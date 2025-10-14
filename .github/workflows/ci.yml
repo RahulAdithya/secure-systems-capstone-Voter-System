@@ -22,7 +22,7 @@ jobs:
         run: |
           cd backend
           . .venv/bin/activate
-          pytest -q --maxfail=1 --disable-warnings --cov=app
+           PYTHONPATH=$PWD pytest -q --maxfail=1 --disable-warnings --cov=app
       - name: SBOM
         run: |
           cd backend
