@@ -32,7 +32,8 @@ jobs:
       - name: Generate SBOM
         run: |
           source .venv/bin/activate
-          cyclonedx-bom --format json --output ../sbom.json
+          python -m pip install --upgrade cyclonedx-bom
+          .venv/bin/cyclonedx-bom --format json --output ../sbom.json
       - name: Bandit (security)
         run: |
           source .venv/bin/activate
