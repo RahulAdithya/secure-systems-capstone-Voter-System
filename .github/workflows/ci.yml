@@ -4,32 +4,37 @@ on:
   pull_request:
 
 jobs:
-  build-test:
+  backend:
+    name: Backend
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+        working-directory: backend
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Install backend deps
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - name: Install dependencies
         run: |
-          cd backend
           python -m venv .venv
-          . .venv/bin/activate
-          pip install -r requirements.txt
-          pip install pytest pytest-cov cyclonedx-bom bandit
-      - name: Tests
+          source .venv/bin/activate
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install pytest pytest-cov cyclonedx-bom bandit
+      - name: Run tests
         run: |
-          cd backend
-          . .venv/bin/activate
-          pytest -q --maxfail=1 --disable-warnings --cov=app
-      - name: SBOM
-        run: |
-          cd backend
-          . .venv/bin/activate
-          cyclonedx-bom -o ../sbom.json
+          source .venv/bin/activate
+          PYTHONPATH=$PWD pytest -q --maxfail=1 --disable-warnings --cov=app
+#      - name: Generate SBOM
+#        run: |
+#          source .venv/bin/activate
+#          python -m pip install --upgrade cyclonedx-bom
+#          python -m cyclonedx_py --format json --output ../sbom.json
       - name: Bandit (security)
         run: |
-          cd backend
-          . .venv/bin/activate
-          bandit -q -r app || true
+          source .venv/bin/activate
+          bandit -q -r app
