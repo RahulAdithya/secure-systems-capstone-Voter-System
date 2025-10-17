@@ -3,9 +3,12 @@ from typing import List
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from slowapi import Limiter
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
+from slowapi.util import get_remote_address
 from starlette.responses import Response
-
-from app.routers import auth, ballots, users
 
 DEFAULT_ALLOWED_ORIGINS = [
     "http://localhost:5173",
@@ -38,6 +41,23 @@ STRICT_TRANSPORT_SECURITY = "max-age=31536000; includeSubDomains"
 
 app = FastAPI(title="Electronic Voting Platform (Base)")
 
+# If behind a proxy later, we can switch to X-Forwarded-For parsing.
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_middleware(SlowAPIMiddleware)
+
+
+@app.exception_handler(RateLimitExceeded)
+def _rate_limit_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:
+    response = JSONResponse(
+        status_code=429,
+        content={"error": "too_many_requests", "detail": "Try again later."},
+    )
+    for header, value in (getattr(exc, "headers", {}) or {}).items():
+        response.headers.setdefault(header, value)
+    return response
+
+
 # Hardened CORS configuration for the frontend UI.
 app.add_middleware(
     CORSMiddleware,
@@ -63,6 +83,8 @@ async def add_security_headers(request: Request, call_next):
 def health():
     return {"ok": True}
 
+
+from app.routers import auth, ballots, users  # noqa: E402
 
 app.include_router(auth.router)
 app.include_router(users.router)
