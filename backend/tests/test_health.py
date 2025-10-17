@@ -1,4 +1,12 @@
 from fastapi.testclient import TestClient
+from app.main import app
+
+from app.main import (
+    ALLOWED_ORIGINS,
+    SECURITY_HEADERS,
+    STRICT_TRANSPORT_SECURITY,
+    app,
+)
 
 from app.main import (
     ALLOWED_ORIGINS,
