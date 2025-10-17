@@ -15,6 +15,21 @@ export async function apiLogin(username, password) {
   return r.json(); // { token: "dummy-token" }
 }
 
+export async function apiSignup({ username, email, password }) {
+  const r = await fetch(`${API_BASE}/auth/signup`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ username, email, password })
+  })
+  const body = await r.json().catch(() => ({}))
+  if (!r.ok) {
+    // Prefer server message when available
+    const msg = (body && (body.detail?.message || body.detail)) || `Signup failed (${r.status})`
+    throw new Error(typeof msg === 'string' ? msg : 'Signup failed')
+  }
+  return body
+}
+
 export async function apiMe() {
   const r = await fetch(`${API_BASE}/users/me`);
   return r.json();

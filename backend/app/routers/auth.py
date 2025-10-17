@@ -1,8 +1,10 @@
 # backend/app/routers/auth.py
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Request, status
-from pydantic import BaseModel
+from fastapi import APIRouter, HTTPException, Request, status, Depends
+from pydantic import BaseModel, EmailStr, Field, field_validator
+from sqlalchemy.orm import Session
+from sqlalchemy import select, or_
 
 from app.security.captcha_guard import (
     clear,
@@ -10,6 +12,9 @@ from app.security.captcha_guard import (
     record_failed,
     verify_captcha_token,
 )
+from app.db import get_db
+from app.db_models import User as DBUser
+from app.security.passwords import hash_password
 
 try:
     # Reuse rate limiter from main when available.
@@ -85,3 +90,76 @@ else:
     @router.post("/login", response_model=LoginResponse)
     async def login(request: Request, payload: LoginPayload) -> LoginResponse:
         return _handle_login(request, payload)
+
+
+# --------- Signup with input validation and SQL injection‑safe persistence ---------
+
+class SignupPayload(BaseModel):
+    username: str = Field(min_length=3, max_length=32)
+    email: EmailStr
+    password: str = Field(min_length=8, max_length=128)
+
+    @field_validator("username")
+    @classmethod
+    def _username_rules(cls, v: str) -> str:
+        # allow letters, digits, underscore; no spaces; must start with letter or digit
+        import re
+
+        v2 = v.strip()
+        if v2 != v:
+            # Disallow leading/trailing spaces
+            raise ValueError("username must not have surrounding spaces")
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_]*", v):
+            raise ValueError("username must be alphanumeric with underscores")
+        return v
+
+    @field_validator("password")
+    @classmethod
+    def _password_rules(cls, v: str) -> str:
+        # Basic strong password policy
+        import re
+
+        if any(ord(ch) < 32 for ch in v):
+            raise ValueError("password contains control characters")
+        if v.strip() != v:
+            raise ValueError("password must not have surrounding spaces")
+        if not re.search(r"[a-z]", v):
+            raise ValueError("password must include a lowercase letter")
+        if not re.search(r"[A-Z]", v):
+            raise ValueError("password must include an uppercase letter")
+        if not re.search(r"\d", v):
+            raise ValueError("password must include a digit")
+        if not re.search(r"[^A-Za-z0-9]", v):
+            raise ValueError("password must include a special character")
+        return v
+
+
+class SignupResponse(BaseModel):
+    id: int
+    username: str
+    email: EmailStr
+
+
+@router.post("/signup", response_model=SignupResponse, status_code=201)
+def signup(payload: SignupPayload, db: Session = Depends(get_db)) -> SignupResponse:
+    # Normalize
+    username = payload.username
+    email = payload.email
+
+    # Check uniqueness using SQLAlchemy parameter binding (prevents SQL injection)
+    stmt = select(DBUser).where(or_(DBUser.username == username, DBUser.email == email))
+    existing = db.execute(stmt).scalars().first()
+    if existing:
+        # Choose specific message without leaking which field exists
+        raise HTTPException(status_code=409, detail="username_or_email_already_exists")
+
+    user = DBUser(
+        username=username,
+        email=str(email),
+        password_hash=hash_password(payload.password),
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    return SignupResponse(id=user.id, username=user.username, email=user.email)
