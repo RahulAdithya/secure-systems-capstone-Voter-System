@@ -92,8 +92,12 @@ def health():
 
 # ---- Routers (import after limiter so auth can import limiter from app.main) ----
 from app.routers import admin, auth, ballots, users  # noqa: E402
+from app.db import Base, engine  # noqa: E402
 
 app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(ballots.router)
 app.include_router(admin.router)
+
+# Initialize database tables on startup
+Base.metadata.create_all(bind=engine)
