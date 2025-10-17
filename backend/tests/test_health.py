@@ -8,6 +8,13 @@ from app.main import (
     app,
 )
 
+from app.main import (
+    ALLOWED_ORIGINS,
+    SECURITY_HEADERS,
+    STRICT_TRANSPORT_SECURITY,
+    app,
+)
+
 client = TestClient(app)
 
 def test_health():
