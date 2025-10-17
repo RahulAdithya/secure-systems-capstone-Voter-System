@@ -50,40 +50,30 @@ STRICT_TRANSPORT_SECURITY = "max-age=31536000; includeSubDomains"
 
 app = FastAPI(title="Electronic Voting Platform (Base)")
 
-# ---- Rate limiting (IP-based) ----
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["authorization", "content-type", "x-requested-with"],
+    max_age=3600,
+)
+
 # If later behind a proxy, parse X-Forwarded-For here.
 limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter
 app.add_middleware(SlowAPIMiddleware)
 
+
 @app.exception_handler(RateLimitExceeded)
 def _rate_limit_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:
-    resp = JSONResponse(
+    response = JSONResponse(
         status_code=429,
         content={"error": "too_many_requests", "detail": "Try again later."},
     )
-    for k, v in (getattr(exc, "headers", {}) or {}).items():
-        resp.headers.setdefault(k, v)
-    return resp
-
-# ---- CORS (REQ-18: hardened to specific origin + methods) ----
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "OPTIONS"],   # strictly limited
-    allow_headers=["authorization", "content-type", "x-requested-with"],
-    max_age=3600,
-)
-
-# ---- (Optional) Force preflight to return 204 (aligns with acceptance) ----
-@app.middleware("http")
-async def cors_preflight_204(request: Request, call_next):
-    # A CORS preflight has method OPTIONS and the Access-Control-Request-Method header
-    if request.method == "OPTIONS" and "access-control-request-method" in request.headers:
-        # CORSMiddleware will still attach CORS headers; we only set the status code to 204.
-        return Response(status_code=204)
-    return await call_next(request)
+    for header, value in (getattr(exc, "headers", {}) or {}).items():
+        response.headers.setdefault(header, value)
+    return response
 
 # ---- Security headers middleware (REQ-17) ----
 @app.middleware("http")
@@ -101,9 +91,9 @@ def health():
     return {"ok": True}
 
 # ---- Routers (import after limiter so auth can import limiter from app.main) ----
-from app.routers import auth, users, ballots  # noqa: E402
+from app.routers import admin, auth, ballots, users  # noqa: E402
 
-# Use prefixes to keep API surface stable (adjust if your project expects bare paths)
-app.include_router(auth.router, prefix="/auth", tags=["auth"])
-app.include_router(users.router, prefix="/users", tags=["users"])
-app.include_router(ballots.router, prefix="/ballots", tags=["ballots"])
+app.include_router(auth.router)
+app.include_router(users.router)
+app.include_router(ballots.router)
+app.include_router(admin.router)

@@ -4,6 +4,8 @@ loguru==0.7.2
 passlib[argon2]==1.7.4
 pydantic==2.8.2
 pyotp==2.9.0
+pytest==8.4.2
+pytest-asyncio==0.24.0
 python-jose==3.3.0
 python-multipart==0.0.9
 slowapi==0.1.7
