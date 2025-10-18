@@ -5,14 +5,37 @@ export async function apiHealth() {
   return r.json();
 }
 
-export async function apiLogin(username, password) {
+export async function apiLogin(username, password, captchaToken) {
   const r = await fetch(`${API_BASE}/auth/login`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ username, password })
+    body: JSON.stringify({
+      username,
+      password,
+      ...(captchaToken ? { captcha_token: captchaToken } : {})
+    })
   });
-  if (!r.ok) throw new Error('Login failed');
-  return r.json(); // { token: "dummy-token" }
+  const text = await r.text();
+  let data = null;
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch (parseError) {
+      data = null;
+    }
+  }
+  if (!r.ok) {
+    const detail = data?.detail;
+    const message = typeof detail === 'string'
+      ? detail
+      : detail?.error || 'Login failed';
+    const error = new Error(message);
+    error.status = r.status;
+    error.detail = detail;
+    error.body = data;
+    throw error;
+  }
+  return data; // { access_token: "...", token_type: "bearer" }
 }
 
 export async function apiSignup({ username, email, password }) {
