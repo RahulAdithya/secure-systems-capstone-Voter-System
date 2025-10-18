@@ -1,10 +1,8 @@
 # backend/app/routers/auth.py
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Request, status, Depends
-from pydantic import BaseModel, EmailStr, Field, field_validator
-from sqlalchemy.orm import Session
-from sqlalchemy import select, or_
+from fastapi import APIRouter, HTTPException, Request, status
+from pydantic import BaseModel
 
 from app.security.captcha_guard import (
     clear,
@@ -12,9 +10,6 @@ from app.security.captcha_guard import (
     record_failed,
     verify_captcha_token,
 )
-from app.db import get_db
-from app.db_models import User as DBUser
-from app.security.passwords import hash_password, verify_password
 
 try:
     # Reuse rate limiter from main when available.
@@ -50,20 +45,12 @@ def _client_ip(request: Request) -> str:
     return client.host if client and client.host else "0.0.0.0"
 
 
-def _credentials_valid(db: Session, username: str, password: str) -> bool:
-    # Try DB user first (Argon2id + pepper)
-    try:
-        stmt = select(DBUser).where(DBUser.username == username)
-        user = db.execute(stmt).scalars().first()
-        if user and verify_password(password, user.password_hash):
-            return True
-    except Exception:
-        pass
-    # Fallback demo creds for tests/back-compat
+def _credentials_valid(username: str, password: str) -> bool:
+    # TODO: integrate with real user store (REQ-04 Argon2id) later
     return username == DEMO_USERNAME and password == DEMO_PASSWORD
 
 
-def _handle_login(request: Request, payload: LoginPayload, db: Session) -> LoginResponse:
+def _handle_login(request: Request, payload: LoginPayload) -> LoginResponse:
     ip = _client_ip(request)
     username = payload.username
 
@@ -75,7 +62,7 @@ def _handle_login(request: Request, payload: LoginPayload, db: Session) -> Login
         )
 
     # Validate credentials
-    if not _credentials_valid(db, payload.username, payload.password):
+    if not _credentials_valid(payload.username, payload.password):
         failed = record_failed(username, ip)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -92,76 +79,9 @@ if limiter:
     # Rate limit: 3 requests per 10s + 5 per minute, per client IP
     @router.post("/login", response_model=LoginResponse)
     @limiter.limit("3/10seconds;5/minute")
-    async def login(request: Request, payload: LoginPayload, db: Session = Depends(get_db)) -> LoginResponse:
-        return _handle_login(request, payload, db)
+    async def login(request: Request, payload: LoginPayload) -> LoginResponse:
+        return _handle_login(request, payload)
 else:
     @router.post("/login", response_model=LoginResponse)
-    async def login(request: Request, payload: LoginPayload, db: Session = Depends(get_db)) -> LoginResponse:
-        return _handle_login(request, payload, db)
-
-
-# --------- Signup with input validation and SQL injection‑safe persistence ---------
-
-class SignupPayload(BaseModel):
-    username: str = Field(min_length=3, max_length=32)
-    email: EmailStr
-    password: str = Field(min_length=8, max_length=128)
-
-    @field_validator("username")
-    @classmethod
-    def _username_rules(cls, v: str) -> str:
-        import re
-
-        v2 = v.strip()
-        if v2 != v:
-            raise ValueError("username must not have surrounding spaces")
-        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_]*", v):
-            raise ValueError("username must be alphanumeric with underscores")
-        return v
-
-    @field_validator("password")
-    @classmethod
-    def _password_rules(cls, v: str) -> str:
-        import re
-
-        if any(ord(ch) < 32 for ch in v):
-            raise ValueError("password contains control characters")
-        if v.strip() != v:
-            raise ValueError("password must not have surrounding spaces")
-        if not re.search(r"[a-z]", v):
-            raise ValueError("password must include a lowercase letter")
-        if not re.search(r"[A-Z]", v):
-            raise ValueError("password must include an uppercase letter")
-        if not re.search(r"\d", v):
-            raise ValueError("password must include a digit")
-        if not re.search(r"[^A-Za-z0-9]", v):
-            raise ValueError("password must include a special character")
-        return v
-
-
-class SignupResponse(BaseModel):
-    id: int
-    username: str
-    email: EmailStr
-
-
-@router.post("/signup", response_model=SignupResponse, status_code=201)
-def signup(payload: SignupPayload, db: Session = Depends(get_db)) -> SignupResponse:
-    username = payload.username
-    email = payload.email
-
-    stmt = select(DBUser).where(or_(DBUser.username == username, DBUser.email == email))
-    existing = db.execute(stmt).scalars().first()
-    if existing:
-        raise HTTPException(status_code=409, detail="username_or_email_already_exists")
-
-    user = DBUser(
-        username=username,
-        email=str(email),
-        password_hash=hash_password(payload.password),
-    )
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-
-    return SignupResponse(id=user.id, username=user.username, email=user.email)
+    async def login(request: Request, payload: LoginPayload) -> LoginResponse:
+        return _handle_login(request, payload)

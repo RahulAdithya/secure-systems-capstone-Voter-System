@@ -5,51 +5,14 @@ export async function apiHealth() {
   return r.json();
 }
 
-export async function apiLogin(username, password, captchaToken) {
+export async function apiLogin(username, password) {
   const r = await fetch(`${API_BASE}/auth/login`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      username,
-      password,
-      ...(captchaToken ? { captcha_token: captchaToken } : {})
-    })
+    body: JSON.stringify({ username, password })
   });
-  const text = await r.text();
-  let data = null;
-  if (text) {
-    try {
-      data = JSON.parse(text);
-    } catch (parseError) {
-      data = null;
-    }
-  }
-  if (!r.ok) {
-    const detail = data?.detail;
-    const message = typeof detail === 'string'
-      ? detail
-      : detail?.error || 'Login failed';
-    const error = new Error(message);
-    error.status = r.status;
-    error.detail = detail;
-    error.body = data;
-    throw error;
-  }
-  return data; // { access_token: "...", token_type: "bearer" }
-}
-
-export async function apiSignup({ username, email, password }) {
-  const r = await fetch(`${API_BASE}/auth/signup`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ username, email, password })
-  })
-  const body = await r.json().catch(() => ({}))
-  if (!r.ok) {
-    const msg = (body && (body.detail?.message || body.detail)) || `Signup failed (${r.status})`
-    throw new Error(typeof msg === 'string' ? msg : 'Signup failed')
-  }
-  return body
+  if (!r.ok) throw new Error('Login failed');
+  return r.json(); // { token: "dummy-token" }
 }
 
 export async function apiMe() {
