@@ -10,7 +10,7 @@ export default function Home() {
 
   return (
     <div style={{ padding: 16 }}>
-      <h2>Electronic Voting Platform (Base)</h2>
+      <h2>Electronic Voting Platform(Base)</h2>
       <p>Backend health: {status ? JSON.stringify(status) : 'Loading...'}</p>
       <p>This is the base UI. No security is implemented yet.</p>
     </div>
