@@ -1,8 +1,17 @@
 # backend/app/routers/auth.py
 from typing import Optional
+from datetime import datetime, timedelta
+from jose import jwt, JWTError
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, HTTPException, Request, status, Depends, Header
 from pydantic import BaseModel
+
+SECRET_KEY = "your-secret-key"  # should be in .env
+ALGORITHM = "HS256"
+# ACCESS_TOKEN_EXPIRE_MINUTES = 10  # REQ-03: ≤10 minutes
+
+ACCESS_TOKEN_EXPIRE_MINUTES = 1  # ~12 seconds for testing
+IDLE_TIMEOUT_MINUTES = 0.5          # ~6 seconds idle timeout
 
 from app.security.captcha_guard import (
     clear,
@@ -40,6 +49,19 @@ class LoginResponse(BaseModel):
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
+
+def create_access_token(data: dict, expires_delta: timedelta = None):
+    to_encode = data.copy()
+    if expires_delta:
+        expire = datetime.utcnow() + expires_delta
+    else:
+        expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    to_encode.update({"exp": expire, "iat": datetime.utcnow()})
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
+
+
+
 def _client_ip(request: Request) -> str:
     client = request.client
     return client.host if client and client.host else "0.0.0.0"
@@ -71,7 +93,12 @@ def _handle_login(request: Request, payload: LoginPayload) -> LoginResponse:
 
     # Success → clear counters and issue token
     clear(username, ip)
-    return LoginResponse(access_token=DEMO_TOKEN)
+    # return LoginResponse(access_token=DEMO_TOKEN)
+    # Initialize idle session
+    update_activity(username)
+    
+    access_token = create_access_token({"sub": username})
+    return LoginResponse(access_token=access_token)
 
 
 # Route with optional limiter
@@ -85,3 +112,55 @@ else:
     @router.post("/login", response_model=LoginResponse)
     async def login(request: Request, payload: LoginPayload) -> LoginResponse:
         return _handle_login(request, payload)
+
+
+
+idle_sessions = {}
+
+
+def update_activity(username: str):
+    idle_sessions[username] = datetime.utcnow()
+
+def check_idle(username: str) -> bool:
+    last = idle_sessions.get(username)
+    if not last:
+        return False
+    # return (datetime.utcnow() - last) > timedelta(minutes=2)
+    return (datetime.utcnow() - last) > timedelta(minutes=IDLE_TIMEOUT_MINUTES)
+
+class RefreshResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+
+
+def verify_token(token: str):
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        return payload  # token valid
+    except JWTError as e:
+        raise HTTPException(status_code=401, detail="token_expired_or_invalid")
+
+from fastapi import Header
+
+@router.post("/refresh", response_model=RefreshResponse)
+async def refresh(payload: LoginPayload, authorization: str = Header(...)):
+    # Expecting header: Authorization: Bearer <token>
+    token = authorization.split(" ")[1]  # extract token
+    
+    # --- JWT check ---
+    try:
+        verify_token(token)
+        # jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+    except JWTError:
+        raise HTTPException(status_code=401, detail="token_expired_or_invalid")
+    
+    username = payload.username
+    
+    # --- Idle timeout check ---
+    if check_idle(username):
+        raise HTTPException(status_code=401, detail="idle_timeout")
+    
+    # Reset activity and issue new token
+    update_activity(username)
+    access_token = create_access_token({"sub": username})
+    return RefreshResponse(access_token=access_token)
