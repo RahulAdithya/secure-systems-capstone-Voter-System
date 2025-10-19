@@ -2,6 +2,7 @@
 from typing import Optional
 from datetime import datetime, timedelta
 from jose import jwt, JWTError
+from app.security.logger import auth_logger as logger
 
 from fastapi import APIRouter, HTTPException, Request, status, Depends, Header
 from pydantic import BaseModel
@@ -73,8 +74,14 @@ def _credentials_valid(username: str, password: str) -> bool:
 
 
 def _handle_login(request: Request, payload: LoginPayload) -> LoginResponse:
+
     ip = _client_ip(request)
     username = payload.username
+
+    safe_password = "***"
+    safe_captcha = "***" if payload.captcha_token else None
+
+    logger.info(f"Login attempt: username={payload.username}, password={safe_password}, captcha={safe_captcha}, ip={ip}")
 
     # If threshold reached, enforce CAPTCHA
     if needs_captcha(username, ip) and not verify_captcha_token(payload.captcha_token):
