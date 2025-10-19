@@ -1,19 +1,30 @@
 # backend/app/routers/auth.py
-from typing import Optional
+import io
+from typing import List, Optional, Tuple
 
-from fastapi import APIRouter, HTTPException, Request, status, Depends
+import qrcode
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi.responses import Response
 from pydantic import BaseModel, EmailStr, Field, field_validator
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
-from sqlalchemy import select, or_
 
+from app.db import get_db
+from app.db_models import User as DBUser
 from app.security.captcha_guard import (
     clear,
     needs_captcha,
     record_failed,
     verify_captcha_token,
 )
-from app.db import get_db
-from app.db_models import User as DBUser
+from app.security.mfa import (
+    enroll as mfa_enroll,
+    is_enrolled as mfa_is_enrolled,
+    latest_backup_codes,
+    provisioning_uri as mfa_provisioning_uri,
+    try_backup_code as mfa_try_backup_code,
+    verify_totp as mfa_verify_totp,
+)
 from app.security.passwords import hash_password, verify_password
 
 try:
@@ -22,85 +33,29 @@ try:
 except Exception:  # pragma: no cover - fallback for tests if limiter import fails
     limiter = None
 
-
 # ---- Demo credentials for assignment/testing ----
+DEMO_ADMIN_EMAIL = "admin@evp-demo.com"
 DEMO_USERNAME = "admin"
 DEMO_PASSWORD = "secret123"
 DEMO_TOKEN = "demo.jwt.token"
 
 
 class LoginPayload(BaseModel):
-    """REQ-15 payload: username/password with optional captcha_token."""
-    username: str
-    password: str
+    """REQ-02/REQ-15 payload including optional MFA values."""
+
+    email: EmailStr
+    password: str = Field(min_length=3, max_length=128)
+    otp: Optional[str] = Field(default=None, min_length=3, max_length=12)
+    backup_code: Optional[str] = Field(default=None, min_length=3, max_length=16)
     captcha_token: Optional[str] = None
 
 
 class LoginResponse(BaseModel):
     """Standard bearer token response."""
+
     access_token: str
     token_type: str = "bearer"
 
-
-router = APIRouter(prefix="/auth", tags=["auth"])
-
-
-def _client_ip(request: Request) -> str:
-    client = request.client
-    return client.host if client and client.host else "0.0.0.0"
-
-
-def _credentials_valid(db: Session, username: str, password: str) -> bool:
-    # Try DB user first (Argon2id + pepper)
-    try:
-        stmt = select(DBUser).where(DBUser.username == username)
-        user = db.execute(stmt).scalars().first()
-        if user and verify_password(password, user.password_hash):
-            return True
-    except Exception:
-        pass
-    # Fallback demo creds for tests/back-compat
-    return username == DEMO_USERNAME and password == DEMO_PASSWORD
-
-
-def _handle_login(request: Request, payload: LoginPayload, db: Session) -> LoginResponse:
-    ip = _client_ip(request)
-    username = payload.username
-
-    # If threshold reached, enforce CAPTCHA
-    if needs_captcha(username, ip) and not verify_captcha_token(payload.captcha_token):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="captcha_required_or_invalid",
-        )
-
-    # Validate credentials
-    if not _credentials_valid(db, payload.username, payload.password):
-        failed = record_failed(username, ip)
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"error": "invalid_credentials", "failed_attempts": failed},
-        )
-
-    # Success → clear counters and issue token
-    clear(username, ip)
-    return LoginResponse(access_token=DEMO_TOKEN)
-
-
-# Route with optional limiter
-if limiter:
-    # Rate limit: 3 requests per 10s + 5 per minute, per client IP
-    @router.post("/login", response_model=LoginResponse)
-    @limiter.limit("3/10seconds;5/minute")
-    async def login(request: Request, payload: LoginPayload, db: Session = Depends(get_db)) -> LoginResponse:
-        return _handle_login(request, payload, db)
-else:
-    @router.post("/login", response_model=LoginResponse)
-    async def login(request: Request, payload: LoginPayload, db: Session = Depends(get_db)) -> LoginResponse:
-        return _handle_login(request, payload, db)
-
-
-# --------- Signup with input validation and SQL injection‑safe persistence ---------
 
 class SignupPayload(BaseModel):
     username: str = Field(min_length=3, max_length=32)
@@ -143,6 +98,141 @@ class SignupResponse(BaseModel):
     id: int
     username: str
     email: EmailStr
+
+
+class MfaEnrollPayload(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=3, max_length=128)
+
+
+class MfaEnrollResponse(BaseModel):
+    otpauth_uri: str
+    backup_codes: List[str]
+
+
+class MfaVerifyPayload(BaseModel):
+    email: EmailStr
+    otp: str = Field(min_length=3, max_length=12)
+
+
+router = APIRouter(prefix="/auth", tags=["auth"])
+
+
+def _client_ip(request: Request) -> str:
+    client = request.client
+    return client.host if client and client.host else "0.0.0.0"
+
+
+def _authenticate_user(db: Session, identifier: str, password: str) -> Optional[Tuple[str, bool]]:
+    """Authenticate user by email or username.
+
+    Returns (canonical_email, is_admin) on success, otherwise None.
+    """
+    try:
+        stmt = select(DBUser).where(or_(DBUser.email == identifier, DBUser.username == identifier))
+        user = db.execute(stmt).scalars().first()
+        if user and verify_password(password, user.password_hash):
+            is_admin = user.email.lower() == DEMO_ADMIN_EMAIL.lower() or user.username == DEMO_USERNAME
+            return user.email, is_admin
+    except Exception:
+        # DB lookup failures fall back to demo credentials
+        pass
+
+    ident_lower = identifier.lower()
+    if ident_lower in {DEMO_ADMIN_EMAIL.lower(), DEMO_USERNAME.lower()} and password == DEMO_PASSWORD:
+        return DEMO_ADMIN_EMAIL, True
+    return None
+
+
+def _handle_login(request: Request, payload: LoginPayload, db: Session) -> LoginResponse:
+    ip = _client_ip(request)
+    identifier = payload.email
+
+    # If threshold reached, enforce CAPTCHA before further checks.
+    if needs_captcha(identifier, ip) and not verify_captcha_token(payload.captcha_token):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="captcha_required_or_invalid",
+        )
+
+    subject = _authenticate_user(db, identifier, payload.password)
+    if not subject:
+        failed = record_failed(identifier, ip)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"error": "invalid_credentials", "failed_attempts": failed},
+        )
+
+    canonical_email, is_admin = subject
+
+    if is_admin:
+        if not mfa_is_enrolled(canonical_email):
+            # Force admin to enroll before continuing.
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="mfa_required")
+
+        # Require either TOTP or backup code on every admin login.
+        if payload.otp:
+            if not mfa_verify_totp(canonical_email, payload.otp):
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid_otp")
+        elif payload.backup_code:
+            if not mfa_try_backup_code(canonical_email, payload.backup_code):
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid_backup_code")
+        else:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="mfa_required")
+
+    # Success → clear counters and issue token
+    clear(identifier, ip)
+    return LoginResponse(access_token=DEMO_TOKEN)
+
+
+# Route with optional limiter
+if limiter:
+    # Rate limit: 3 requests per 10s + 5 per minute, per client IP
+    @router.post("/login", response_model=LoginResponse)
+    @limiter.limit("3/10seconds;5/minute")
+    async def login(request: Request, payload: LoginPayload, db: Session = Depends(get_db)) -> LoginResponse:
+        return _handle_login(request, payload, db)
+else:
+    @router.post("/login", response_model=LoginResponse)
+    async def login(request: Request, payload: LoginPayload, db: Session = Depends(get_db)) -> LoginResponse:
+        return _handle_login(request, payload, db)
+
+
+@router.post("/mfa/enroll", response_model=MfaEnrollResponse, status_code=status.HTTP_201_CREATED)
+def enroll_mfa(payload: MfaEnrollPayload, db: Session = Depends(get_db)) -> MfaEnrollResponse:
+    subject = _authenticate_user(db, payload.email, payload.password)
+    if not subject:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid_credentials")
+
+    canonical_email, is_admin = subject
+    if not is_admin:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="only_admin_can_enroll_mfa")
+
+    record = mfa_enroll(canonical_email)
+    otpauth_uri = mfa_provisioning_uri(canonical_email)
+    backup_codes = latest_backup_codes(canonical_email)
+    return MfaEnrollResponse(otpauth_uri=otpauth_uri, backup_codes=backup_codes)
+
+
+@router.post("/mfa/verify-setup", status_code=status.HTTP_204_NO_CONTENT)
+def verify_mfa_setup(payload: MfaVerifyPayload) -> Response:
+    if not mfa_is_enrolled(payload.email):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="mfa_not_enrolled")
+    if not mfa_verify_totp(payload.email, payload.otp):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid_otp")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/mfa/qrcode")
+def get_mfa_qrcode(email: EmailStr = Query(...)) -> Response:
+    if not mfa_is_enrolled(email):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="mfa_not_enrolled")
+
+    otpauth_uri = mfa_provisioning_uri(email)
+    img = qrcode.make(otpauth_uri)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return Response(content=buf.getvalue(), media_type="image/png")
 
 
 @router.post("/signup", response_model=SignupResponse, status_code=201)
