@@ -182,7 +182,8 @@ def _handle_login(request: Request, payload: LoginPayload, db: Session) -> Login
 
     # Success → clear counters and issue token
     clear(identifier, ip)
-    return LoginResponse(access_token=DEMO_TOKEN)
+    token = f"{'admin' if is_admin else 'voter'}:{canonical_email}"
+    return LoginResponse(access_token=token)
 
 
 # Route with optional limiter
@@ -252,6 +253,10 @@ def get_mfa_qrcode(payload: MfaQrPayload, db: Session = Depends(get_db)) -> Resp
 def signup(payload: SignupPayload, db: Session = Depends(get_db)) -> SignupResponse:
     username = payload.username
     email = payload.email
+
+    # Disallow claiming the reserved admin identity via self-signup
+    if username.lower() == DEMO_USERNAME.lower() or str(email).lower() == DEMO_ADMIN_EMAIL.lower():
+        raise HTTPException(status_code=403, detail="reserved_identity")
 
     stmt = select(DBUser).where(or_(DBUser.username == username, DBUser.email == email))
     existing = db.execute(stmt).scalars().first()
