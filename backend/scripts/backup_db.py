@@ -1,0 +1,99 @@
+from __future__ import annotations
+
+import argparse
+import shutil
+import sqlite3
+from pathlib import Path
+
+if __package__ in (None, ""):
+    # Allow execution via ``python backend/scripts/backup_db.py``.
+    import sys
+
+    sys.path.append(str(Path(__file__).resolve().parent))
+    from _backup_utils import (  # type: ignore  # noqa: F401
+        BACKUPS_DIR,
+        SnapshotMeta,
+        now_ts,
+        pragma_integrity_check,
+        resolve_db_path,
+        sha256_file,
+        table_counts,
+    )
+else:
+    from ._backup_utils import (
+        BACKUPS_DIR,
+        SnapshotMeta,
+        now_ts,
+        pragma_integrity_check,
+        resolve_db_path,
+        sha256_file,
+        table_counts,
+    )
+
+
+def backup_db() -> int:
+    db_path = resolve_db_path()
+    if not db_path.exists():
+        print(f"[ERR] DB file not found: {db_path}")
+        return 2
+
+    BACKUPS_DIR.mkdir(parents=True, exist_ok=True)
+    ts = now_ts()
+    snapshot = BACKUPS_DIR / f"snapshot-{ts}.sqlite3"
+    meta_path = BACKUPS_DIR / f"snapshot-{ts}.json"
+
+    if snapshot.exists():
+        snapshot.unlink()
+
+    try:
+        with sqlite3.connect(str(db_path)) as src, sqlite3.connect(
+            str(snapshot)
+        ) as dst:
+            src.backup(dst)
+    except sqlite3.Error as exc:
+        print(f"[ERR] SQLite backup failed: {exc}")
+        return 3
+
+    try:
+        shutil.copystat(db_path, snapshot)
+    except Exception:
+        # Non-fatal: preserving mtime/permissions is best-effort.
+        pass
+
+    sha = sha256_file(snapshot)
+    ok, integrity_msg = pragma_integrity_check(snapshot)
+    counts = table_counts(snapshot)
+
+    meta = SnapshotMeta(
+        timestamp=ts,
+        db_file=str(db_path),
+        snapshot_file=str(snapshot),
+        snapshot_size=snapshot.stat().st_size,
+        sha256=sha,
+        integrity_check=integrity_msg,
+        table_counts=counts,
+    )
+    meta_path.write_text(meta.to_json(), encoding="utf-8")
+
+    print(
+        "[OK] Backup created:\n"
+        f"- DB: {db_path}\n"
+        f"- SNAPSHOT: {snapshot}\n"
+        f"- META: {meta_path}"
+    )
+    print(
+        f"[INFO] sha256={sha} integrity_check={integrity_msg} tables={len(counts)}"
+    )
+    return 0 if ok else 1
+
+
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Create a timestamped SQLite snapshot with metadata."
+    )
+    return parser.parse_args()
+
+
+if __name__ == "__main__":
+    args = _parse_args()
+    raise SystemExit(backup_db())
