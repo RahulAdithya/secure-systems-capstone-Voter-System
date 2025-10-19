@@ -3,20 +3,17 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import re
 import shutil
 import sqlite3
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+from urllib.parse import urlparse
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 DEFAULT_DB_FILE = BASE_DIR / "var" / "evp.sqlite3"
 BACKUPS_DIR = BASE_DIR / "backups"
-
-_DB_URL_RE = re.compile(r"^sqlite:/*(?P<path>.+)$")
-
 
 def _ensure_dirs() -> None:
     BACKUPS_DIR.mkdir(parents=True, exist_ok=True)
@@ -27,10 +24,20 @@ def _from_database_url(env: Optional[str]) -> Optional[Path]:
     if not env:
         return None
     candidate = env.strip()
-    match = _DB_URL_RE.match(candidate)
-    if not match:
+    parsed = urlparse(candidate)
+    if parsed.scheme != "sqlite":
         return None
-    return Path(match.group("path"))
+    path = parsed.path or ""
+    # If a netloc is provided (rare for sqlite), include it.
+    if parsed.netloc:
+        path = f"/{parsed.netloc}{path}"
+    # Normalise quadruple-slash absolute paths (sqlite:////var/db.sqlite3)
+    while path.startswith("//"):
+        path = path[1:]
+    if not path:
+        return None
+    result = Path(path)
+    return result.expanduser()
 
 
 def resolve_db_path() -> Path:
