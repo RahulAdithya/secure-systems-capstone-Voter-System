@@ -7,13 +7,26 @@ import sys
 import time
 from pathlib import Path
 
-from _backup_utils import (
-    BACKUPS_DIR,
-    latest_snapshot,
-    pragma_integrity_check,
-    resolve_db_path,
-    sha256_file,
-)
+if __package__ in (None, ""):
+    import sys
+    from pathlib import Path
+
+    sys.path.append(str(Path(__file__).resolve().parent))
+    from _backup_utils import (  # type: ignore  # noqa: F401
+        BACKUPS_DIR,
+        latest_snapshot,
+        pragma_integrity_check,
+        resolve_db_path,
+        sha256_file,
+    )
+else:
+    from ._backup_utils import (
+        BACKUPS_DIR,
+        latest_snapshot,
+        pragma_integrity_check,
+        resolve_db_path,
+        sha256_file,
+    )
 
 
 def restore_db(snapshot: Path | None) -> int:

@@ -5,15 +5,31 @@ import shutil
 
 from pathlib import Path
 
-from _backup_utils import (
-    BACKUPS_DIR,
-    SnapshotMeta,
-    now_ts,
-    pragma_integrity_check,
-    resolve_db_path,
-    sha256_file,
-    table_counts,
-)
+if __package__ in (None, ""):
+    # Allow execution via ``python backend/scripts/backup_db.py``.
+    import sys
+    from pathlib import Path
+
+    sys.path.append(str(Path(__file__).resolve().parent))
+    from _backup_utils import (  # type: ignore  # noqa: F401
+        BACKUPS_DIR,
+        SnapshotMeta,
+        now_ts,
+        pragma_integrity_check,
+        resolve_db_path,
+        sha256_file,
+        table_counts,
+    )
+else:
+    from ._backup_utils import (
+        BACKUPS_DIR,
+        SnapshotMeta,
+        now_ts,
+        pragma_integrity_check,
+        resolve_db_path,
+        sha256_file,
+        table_counts,
+    )
 
 
 def backup_db() -> int:
