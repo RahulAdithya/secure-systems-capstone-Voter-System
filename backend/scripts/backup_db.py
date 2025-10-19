@@ -2,13 +2,12 @@ from __future__ import annotations
 
 import argparse
 import shutil
-
+import sqlite3
 from pathlib import Path
 
 if __package__ in (None, ""):
     # Allow execution via ``python backend/scripts/backup_db.py``.
     import sys
-    from pathlib import Path
 
     sys.path.append(str(Path(__file__).resolve().parent))
     from _backup_utils import (  # type: ignore  # noqa: F401
@@ -43,7 +42,23 @@ def backup_db() -> int:
     snapshot = BACKUPS_DIR / f"snapshot-{ts}.sqlite3"
     meta_path = BACKUPS_DIR / f"snapshot-{ts}.json"
 
-    shutil.copy2(db_path, snapshot)
+    if snapshot.exists():
+        snapshot.unlink()
+
+    try:
+        with sqlite3.connect(str(db_path)) as src, sqlite3.connect(
+            str(snapshot)
+        ) as dst:
+            src.backup(dst)
+    except sqlite3.Error as exc:
+        print(f"[ERR] SQLite backup failed: {exc}")
+        return 3
+
+    try:
+        shutil.copystat(db_path, snapshot)
+    except Exception:
+        # Non-fatal: preserving mtime/permissions is best-effort.
+        pass
 
     sha = sha256_file(snapshot)
     ok, integrity_msg = pragma_integrity_check(snapshot)
