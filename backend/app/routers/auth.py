@@ -223,12 +223,25 @@ def verify_mfa_setup(payload: MfaVerifyPayload) -> Response:
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@router.get("/mfa/qrcode")
-def get_mfa_qrcode(email: EmailStr = Query(...)) -> Response:
-    if not mfa_is_enrolled(email):
+class MfaQrPayload(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=3, max_length=128)
+
+
+@router.post("/mfa/qrcode")
+def get_mfa_qrcode(payload: MfaQrPayload, db: Session = Depends(get_db)) -> Response:
+    subject = _authenticate_user(db, payload.email, payload.password)
+    if not subject:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid_credentials")
+
+    canonical_email, is_admin = subject
+    if not is_admin:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="only_admin_can_view_qr")
+
+    if not mfa_is_enrolled(canonical_email):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="mfa_not_enrolled")
 
-    otpauth_uri = mfa_provisioning_uri(email)
+    otpauth_uri = mfa_provisioning_uri(canonical_email)
     img = qrcode.make(otpauth_uri)
     buf = io.BytesIO()
     img.save(buf, format="PNG")

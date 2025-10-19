@@ -28,6 +28,15 @@ def test_admin_mfa_flow(monkeypatch):
     assert len(backup_codes) == 10
     _reset_limits()
 
+    # QR endpoint now requires admin password, returns PNG bytes.
+    qr_response = client.post(
+        "/auth/mfa/qrcode",
+        json={"email": email, "password": "secret123"},
+    )
+    assert qr_response.status_code == 200
+    assert qr_response.headers["content-type"] == "image/png"
+    _reset_limits()
+
     totp = pyotp.parse_uri(data["otpauth_uri"])
 
     # Optional verification endpoint
@@ -77,7 +86,9 @@ def test_admin_mfa_flow(monkeypatch):
     assert response.json() == {"detail": "invalid_backup_code"}
     _reset_limits()
 
-    # QR code endpoint should return a PNG.
-    qr_response = client.get("/auth/mfa/qrcode", params={"email": email})
-    assert qr_response.status_code == 200
-    assert qr_response.headers["content-type"] == "image/png"
+    # Wrong password for QR retrieval is rejected.
+    bad_qr = client.post(
+        "/auth/mfa/qrcode",
+        json={"email": email, "password": "bad"},
+    )
+    assert bad_qr.status_code == 401
