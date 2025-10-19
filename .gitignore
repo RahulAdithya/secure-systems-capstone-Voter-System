@@ -9,3 +9,8 @@ dist/
 .idea/
 infra/nginx/certs/
 sbom.json
+
+nginx/certs/*.key
+nginx/certs/*.crt
+backend/.uvicorn.pid
+backend/backups/
