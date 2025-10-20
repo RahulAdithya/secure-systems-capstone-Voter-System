@@ -181,12 +181,14 @@ def _handle_login(
 
     guard_key = _guard_key(str(identifier), ip) if guards_enabled else None
 
+    state = None
     if guards_enabled and guard_key is not None:
+        state = store.get(guard_key, window_seconds=settings.login_lockout_seconds)
         locked, retry_after = store.is_locked(guard_key)
         if locked:
             headers: Dict[str, str] = {}
-            state = store.get(guard_key, window_seconds=settings.login_lockout_seconds)
-            if state.fails >= settings.login_captcha_fail_threshold:
+            current = state or store.get(guard_key, window_seconds=settings.login_lockout_seconds)
+            if current.fails >= settings.login_captcha_fail_threshold:
                 headers["X-Captcha-Required"] = "true"
             if retry_after:
                 headers["Retry-After"] = str(retry_after)
@@ -233,6 +235,17 @@ def _handle_login(
         )
 
     canonical_email, is_admin = subject
+
+    if guards_enabled and guard_key is not None:
+        current_state = state or store.get(guard_key, window_seconds=settings.login_lockout_seconds)
+        captcha_required = current_state.fails >= settings.login_captcha_fail_threshold
+        if captcha_required and not verify_captcha_token(payload.captcha_token):
+            headers = {"X-Captcha-Required": "true"}
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="captcha_required_or_invalid",
+                headers=headers,
+            )
 
     if is_admin:
         if not mfa_is_enrolled(canonical_email):
