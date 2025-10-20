@@ -1,22 +1,24 @@
 # backend/app/routers/auth.py
 import io
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import qrcode
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, EmailStr, Field, field_validator
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.db_models import User as DBUser
+from app.core.settings import get_settings
 from app.security.captcha_guard import (
     clear,
     needs_captcha,
     record_failed,
     verify_captcha_token,
 )
+from app.security.attempts import store
 from app.security.mfa import (
     enroll as mfa_enroll,
     is_enrolled as mfa_is_enrolled,
@@ -123,6 +125,10 @@ def _client_ip(request: Request) -> str:
     return client.host if client and client.host else "0.0.0.0"
 
 
+def _guard_key(email: str, ip: str) -> str:
+    return store.key(email, ip)
+
+
 def _authenticate_user(db: Session, identifier: str, password: str) -> Optional[Tuple[str, bool]]:
     """Authenticate user by email or username.
 
@@ -144,26 +150,102 @@ def _authenticate_user(db: Session, identifier: str, password: str) -> Optional[
     return None
 
 
-def _handle_login(request: Request, payload: LoginPayload, db: Session) -> LoginResponse:
+@router.get("/captcha/status")
+def captcha_status(request: Request, email: EmailStr = Query(...)):
+    """
+    Returns whether captcha should be shown for this identity.
+    Works even when guards disabled (returns false).
+    """
+    settings = get_settings()
+    if not settings.enable_login_guards:
+        return {"captcha_required": False}
+
+    ip = _client_ip(request)
+    key = _guard_key(str(email), ip)
+    state = store.get(key, window_seconds=settings.login_lockout_seconds)
+    required = state.fails >= settings.login_captcha_fail_threshold
+    return {"captcha_required": required}
+
+
+def _handle_login(
+    request: Request,
+    payload: LoginPayload,
+    db: Session,
+    *,
+    force_fail: bool = False,
+) -> LoginResponse:
+    settings = get_settings()
+    guards_enabled = settings.enable_login_guards
     ip = _client_ip(request)
     identifier = payload.email
 
-    # If threshold reached, enforce CAPTCHA before further checks.
-    if needs_captcha(identifier, ip) and not verify_captcha_token(payload.captcha_token):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="captcha_required_or_invalid",
-        )
+    guard_key = _guard_key(str(identifier), ip) if guards_enabled else None
 
-    subject = _authenticate_user(db, identifier, payload.password)
+    state = None
+    if guards_enabled and guard_key is not None:
+        state = store.get(guard_key, window_seconds=settings.login_lockout_seconds)
+        locked, retry_after = store.is_locked(guard_key)
+        if locked:
+            headers: Dict[str, str] = {}
+            current = state or store.get(guard_key, window_seconds=settings.login_lockout_seconds)
+            if current.fails >= settings.login_captcha_fail_threshold:
+                headers["X-Captcha-Required"] = "true"
+            if retry_after:
+                headers["Retry-After"] = str(retry_after)
+            return JSONResponse(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                content={"error": "locked", "retry_after": retry_after},
+                headers=headers or None,
+            )
+    else:
+        # Legacy captcha guard remains active when login guards are disabled.
+        if needs_captcha(identifier, ip) and not verify_captcha_token(payload.captcha_token):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="captcha_required_or_invalid",
+            )
+
+    simulate_fail = guards_enabled and bool(force_fail)
+
+    subject = None if simulate_fail else _authenticate_user(db, identifier, payload.password)
     if not subject:
+        headers: Dict[str, str] = {}
+        if guards_enabled and guard_key is not None:
+            fails, locked_now, retry_after = store.register_fail(
+                guard_key,
+                settings.login_fail_limit,
+                settings.login_lockout_seconds,
+            )
+            if fails >= settings.login_captcha_fail_threshold:
+                headers["X-Captcha-Required"] = "true"
+            if locked_now:
+                if retry_after:
+                    headers["Retry-After"] = str(retry_after)
+                return JSONResponse(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    content={"error": "locked", "retry_after": retry_after},
+                    headers=headers or None,
+                )
+
         failed = record_failed(identifier, ip)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={"error": "invalid_credentials", "failed_attempts": failed},
+            headers=headers or None,
         )
 
     canonical_email, is_admin = subject
+
+    if guards_enabled and guard_key is not None:
+        current_state = state or store.get(guard_key, window_seconds=settings.login_lockout_seconds)
+        captcha_required = current_state.fails >= settings.login_captcha_fail_threshold
+        if captcha_required and not verify_captcha_token(payload.captcha_token):
+            headers = {"X-Captcha-Required": "true"}
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="captcha_required_or_invalid",
+                headers=headers,
+            )
 
     if is_admin:
         if not mfa_is_enrolled(canonical_email):
@@ -182,6 +264,8 @@ def _handle_login(request: Request, payload: LoginPayload, db: Session) -> Login
 
     # Success → clear counters and issue token
     clear(identifier, ip)
+    if guards_enabled and guard_key is not None:
+        store.register_success(guard_key)
     token = f"{'admin' if is_admin else 'voter'}:{canonical_email}"
     return LoginResponse(access_token=token)
 
@@ -191,12 +275,22 @@ if limiter:
     # Rate limit: 3 requests per 10s + 5 per minute, per client IP
     @router.post("/login", response_model=LoginResponse)
     @limiter.limit("3/10seconds;5/minute")
-    async def login(request: Request, payload: LoginPayload, db: Session = Depends(get_db)) -> LoginResponse:
-        return _handle_login(request, payload, db)
+    async def login(
+        request: Request,
+        payload: LoginPayload,
+        force_fail: int = Query(0, include_in_schema=False),
+        db: Session = Depends(get_db),
+    ) -> LoginResponse:
+        return _handle_login(request, payload, db, force_fail=bool(force_fail))
 else:
     @router.post("/login", response_model=LoginResponse)
-    async def login(request: Request, payload: LoginPayload, db: Session = Depends(get_db)) -> LoginResponse:
-        return _handle_login(request, payload, db)
+    async def login(
+        request: Request,
+        payload: LoginPayload,
+        force_fail: int = Query(0, include_in_schema=False),
+        db: Session = Depends(get_db),
+    ) -> LoginResponse:
+        return _handle_login(request, payload, db, force_fail=bool(force_fail))
 
 
 @router.post("/mfa/enroll", response_model=MfaEnrollResponse, status_code=status.HTTP_201_CREATED)
