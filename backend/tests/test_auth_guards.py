@@ -81,8 +81,8 @@ def test_three_failures_lock_for_30s(monkeypatch):
     _reset_limits()
 
 
-def test_guards_off_by_default():
-    os.environ["ENABLE_LOGIN_GUARDS"] = "0"
+def test_guards_can_be_disabled(monkeypatch):
+    monkeypatch.setenv("ENABLE_LOGIN_GUARDS", "0")
     get_settings.cache_clear()
 
     email = "admin@evp-demo.com"
@@ -104,7 +104,7 @@ def test_guards_off_by_default():
     assert resp.headers.get("X-Captcha-Required") is None
     _reset_limits()
 
-    os.environ["ENABLE_LOGIN_GUARDS"] = "1"
+    monkeypatch.setenv("ENABLE_LOGIN_GUARDS", "1")
     get_settings.cache_clear()
 
 

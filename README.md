@@ -27,3 +27,18 @@ curl -k -I https://localhost/auth/login | sed -n '1,20p'
 curl -k -I https://localhost/ | sed -n '1,12p'
 # Expect: 404 (by design)
 ```
+
+## Frontend Theme Smoke Tests
+
+```
+cd frontend
+npm install
+npm run dev
+```
+
+Open http://localhost:5173 (or 5174 if Vite selects another port) and verify:
+
+- Theme matches your OS preference on first load.
+- Using the theme toggle in the header switches light ↔ dark and persists after refresh.
+- Pages (login, signup, dashboards) inherit the background/text colors and component styling.
+- Keyboard tabbing shows visible focus rings on buttons, inputs, and links.

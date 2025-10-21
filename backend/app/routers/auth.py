@@ -153,6 +153,23 @@ def _client_ip(request: Request) -> str:
 def _guard_key(email: str, ip: str) -> str:
     return store.key(email, ip)
 
+
+@router.get("/captcha/status")
+def captcha_status(request: Request, email: EmailStr = Query(...)):
+    """
+    Report whether the caller must complete a captcha challenge before logging in.
+    Works for both the new login guards (default) and the legacy in-memory guard.
+    """
+    settings = get_settings()
+    ip = _client_ip(request)
+    if settings.enable_login_guards:
+        key = _guard_key(str(email), ip)
+        state = store.get(key, window_seconds=settings.login_lockout_seconds)
+        required = state.fails >= settings.login_captcha_fail_threshold
+        return {"captcha_required": required}
+    return {"captcha_required": needs_captcha(str(email), ip)}
+
+
 def _authenticate_user(db: Session, identifier: str, password: str) -> Optional[Tuple[str, bool]]:
     try:
         stmt = select(DBUser).where(or_(DBUser.email == identifier, DBUser.username == identifier))
@@ -195,26 +212,59 @@ def _handle_login(request: Request, payload: LoginPayload, db: Session, *, force
             )
 
     # Legacy captcha guard if login guards disabled
-    if needs_captcha(identifier, ip) and not verify_captcha_token(payload.captcha_token):
+    if not guards_enabled and needs_captcha(identifier, ip) and not verify_captcha_token(payload.captcha_token):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="captcha_required_or_invalid",
         )
 
+    simulate_fail = bool(force_fail) if guards_enabled else False
+
     # Simulate fail if requested
-    subject = None if force_fail else _authenticate_user(db, identifier, payload.password)
+    subject = None if simulate_fail else _authenticate_user(db, identifier, payload.password)
     if not subject:
+        headers: Dict[str, str] = {}
+        retry_after = 0
+        captcha_required = False
+        if guards_enabled and guard_key:
+            fails, locked_now, retry_after = store.register_fail(
+                guard_key,
+                settings.login_fail_limit,
+                settings.login_lockout_seconds,
+            )
+            if fails >= settings.login_captcha_fail_threshold:
+                headers["X-Captcha-Required"] = "true"
+                captcha_required = True
+            if locked_now:
+                if retry_after:
+                    headers["Retry-After"] = str(retry_after)
+                logger.warning(f"Failed login for {identifier} from IP {ip}  Email:{payload.email} Password:[REDACTED]")
+                return JSONResponse(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    content={"error": "locked", "retry_after": retry_after},
+                    headers=headers or None,
+                )
+
         failed = record_failed(identifier, ip)
         logger.warning(f"Failed login for {identifier} from IP {ip}  Email:{payload.email} Password:[REDACTED]")
-        if guards_enabled and guard_key:
-            store.register_fail(guard_key, settings.login_fail_limit, settings.login_lockout_seconds)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={"error": "invalid_credentials", "failed_attempts": failed},
+            headers=headers or None,
         )
 
+    if guards_enabled and guard_key:
+        current_state = state or store.get(guard_key, window_seconds=settings.login_lockout_seconds)
+        captcha_required = current_state.fails >= settings.login_captcha_fail_threshold
+        if captcha_required and not verify_captcha_token(payload.captcha_token):
+            headers = {"X-Captcha-Required": "true"}
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="captcha_required_or_invalid",
+                headers=headers,
+            )
+
     canonical_email, is_admin = subject
-    logger.info(f"Successful login for {identifier} from IP {ip}  Email:{payload.email} Password:[REDACTED]")
 
     # MFA checks for admin
     if is_admin:
@@ -228,6 +278,8 @@ def _handle_login(request: Request, payload: LoginPayload, db: Session, *, force
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid_backup_code")
         else:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="mfa_required")
+
+    logger.info(f"Successful login for {identifier} from IP {ip}  Email:{payload.email} Password:[REDACTED]")
 
     # Success → clear counters, register success, update idle
     clear(identifier, ip)
@@ -330,5 +382,3 @@ async def refresh(payload: LoginPayload, authorization: str = Header(...)):
     return RefreshResponse(access_token=access_token)
 
     
-
-

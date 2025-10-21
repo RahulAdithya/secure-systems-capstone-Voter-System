@@ -1,16 +1,19 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { api } from "../lib/api";
 import { auth } from "../lib/auth";
+import Button from "../components/ui/Button";
+import Card from "../components/ui/Card";
+
+const ADMIN_INACTIVITY_LIMIT = 60 * 1000;
+const ADMIN_WARNING_TIME = 30 * 1000;
 
 type Ballot = { id: number; title: string; options: string[]; votes: number[]; totalVotes: number };
 
 export default function AdminDashboard(): React.ReactElement {
   const [ballots, setBallots] = useState<Ballot[]>([]);
   const [error, setError] = useState("");
-  const [logoutMessage, setLogoutMessage] = useState(""); 
-  
-  const INACTIVITY_LIMIT = 60 * 1000; // 1 min
-  const WARNING_TIME = 30 * 1000; // 30 sec before logout
+  const [logoutMessage, setLogoutMessage] = useState("");
+
   const [lastActivity, setLastActivity] = useState(Date.now());
   
     useEffect(() => {
@@ -26,11 +29,11 @@ export default function AdminDashboard(): React.ReactElement {
       const interval = setInterval(() => {
         const elapsed = Date.now() - lastActivity;
   
-        if (elapsed >= INACTIVITY_LIMIT) {
+        if (elapsed >= ADMIN_INACTIVITY_LIMIT) {
           auth.clear(); // remove token
           setLogoutMessage("You have been logged out due to inactivity.");
           window.location.href = "/login";
-        } else if (elapsed >= WARNING_TIME) {
+        } else if (elapsed >= ADMIN_WARNING_TIME) {
           setLogoutMessage("⚠️ You will be logged out soon due to inactivity.");
         } else {
           setLogoutMessage("");
@@ -60,55 +63,57 @@ export default function AdminDashboard(): React.ReactElement {
   );
 
   return (
-    <div style={{ padding: 24, fontFamily: "system-ui", maxWidth: 720, margin: "0 auto" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <h2>Admin Dashboard</h2>
-        <button
+    <div className="space-y-6">
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h2 className="text-3xl font-semibold">Admin Dashboard</h2>
+          <p className="text-sm text-muted">
+            Monitor ballots and vote totals. Inactivity protection will sign you out after one minute.
+          </p>
+        </div>
+        <Button
+          variant="outline"
           onClick={() => {
             auth.clear();
             window.location.href = "/admin-login";
           }}
         >
           Sign out
-        </button>
+        </Button>
       </div>
-      <p>Total ballots: {ballots.length} | Total votes cast: {grandTotal}</p>
-      {error && <p style={{ color: "crimson" }}>{error}</p>}
-      <div style={{ marginTop: 16 }}>
+      <Card className="p-6">
+        <p className="text-sm text-muted">
+          Total ballots: <span className="font-semibold text-text">{ballots.length}</span> | Total votes cast:{" "}
+          <span className="font-semibold text-text">{grandTotal}</span>
+        </p>
+        {error && <p className="mt-3 text-sm font-medium text-red-500">{error}</p>}
+      </Card>
+      <div className="grid gap-4">
         {ballots.map((b) => (
-          <div key={b.id} style={{ border: "1px solid #ddd", padding: 12, borderRadius: 8, marginBottom: 12 }}>
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
-              <strong>{b.title}</strong>
-              <span>Total votes: {b.totalVotes}</span>
+          <Card key={b.id} className="p-5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3 className="text-lg font-semibold">{b.title}</h3>
+              <span className="text-sm text-muted">Total votes: {b.totalVotes}</span>
             </div>
-            <div style={{ marginTop: 8 }}>
+            <div className="mt-4 space-y-2">
               {b.options.map((opt, idx) => (
-                <div key={idx} style={{ display: "flex", justifyContent: "space-between" }}>
+                <div key={opt} className="flex items-center justify-between rounded-lg border border-border/60 bg-bg-elev px-3 py-2">
                   <span>{opt}</span>
-                  <span>{b.votes?.[idx] ?? 0}</span>
+                  <span className="font-mono text-sm">{b.votes?.[idx] ?? 0}</span>
                 </div>
               ))}
             </div>
-          </div>
+          </Card>
         ))}
+        {ballots.length === 0 && (
+          <Card className="p-6 text-sm text-muted">No ballots are currently configured. Create one to view tallies here.</Card>
+        )}
       </div>
-        {logoutMessage && (
-        <div
-          style={{
-            position: "fixed",
-            bottom: 20,
-            left: 20,
-            background: "rgba(255, 165, 0, 0.9)",
-            color: "#000",
-            padding: "0.5rem 1rem",
-            borderRadius: 5,
-            boxShadow: "0 2px 6px rgba(0,0,0,0.2)",
-            zIndex: 1000,
-          }}
-        >
+      {logoutMessage && (
+        <div className="fixed bottom-5 left-5 z-50 rounded-full border border-amber-400/70 bg-amber-100/90 px-4 py-2 text-sm text-amber-900 shadow-lg dark:border-amber-300/60 dark:bg-amber-200/90">
           {logoutMessage}
         </div>
-        )}
+      )}
     </div>
   );
 }
