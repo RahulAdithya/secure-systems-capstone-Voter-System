@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends
 
-from app.security import User, require_role
+from app.security_utils import User, require_role
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 

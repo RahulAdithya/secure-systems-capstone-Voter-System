@@ -18,6 +18,39 @@ export default function UserDashboard(): React.ReactElement {
   const [message, setMessage] = useState<string>("");
   const [error, setError] = useState<string>("");
   const [loading, setLoading] = useState(false);
+  const [logoutMessage, setLogoutMessage] = useState(""); 
+
+  const INACTIVITY_LIMIT = 60 * 1000; // 1 min
+  const WARNING_TIME = 30 * 1000; // 30 sec before logout
+  const [lastActivity, setLastActivity] = useState(Date.now());
+
+  useEffect(() => {
+    const resetActivity = () => setLastActivity(Date.now());
+    const events = ["mousemove", "keydown", "click"];
+    events.forEach((e) => window.addEventListener(e, resetActivity));
+    return () => events.forEach((e) => window.removeEventListener(e, resetActivity));
+  }, []);
+  
+
+
+    useEffect(() => {
+    const interval = setInterval(() => {
+      const elapsed = Date.now() - lastActivity;
+
+      if (elapsed >= INACTIVITY_LIMIT) {
+        auth.clear(); // remove token
+        setLogoutMessage("You have been logged out due to inactivity.");
+        window.location.href = "/login";
+      } else if (elapsed >= WARNING_TIME) {
+        setLogoutMessage("⚠️ You will be logged out soon due to inactivity.");
+      } else {
+        setLogoutMessage("");
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [lastActivity]);
+
 
   useEffect(() => {
     let mounted = true;
@@ -142,6 +175,23 @@ export default function UserDashboard(): React.ReactElement {
           {message && <p style={{ color: "seagreen", marginTop: 8 }}>{message}</p>}
         </form>
       )}
+      {logoutMessage && (
+        <div
+          style={{
+            position: "fixed",
+            bottom: 20,
+            left: 20,
+            background: "rgba(255, 165, 0, 0.9)",
+            color: "#000",
+            padding: "0.5rem 1rem",
+            borderRadius: 5,
+            boxShadow: "0 2px 6px rgba(0,0,0,0.2)",
+            zIndex: 1000,
+          }}
+        >
+          {logoutMessage}
+        </div>
+        )}
     </div>
   );
 }
