@@ -30,6 +30,7 @@ export default function UserDashboard(): React.ReactElement {
     events.forEach((e) => window.addEventListener(e, resetActivity));
     return () => events.forEach((e) => window.removeEventListener(e, resetActivity));
   }, []);
+  
 
 
     useEffect(() => {

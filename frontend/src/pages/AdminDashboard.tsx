@@ -21,6 +21,7 @@ export default function AdminDashboard(): React.ReactElement {
     }, []);
   
   
+    
       useEffect(() => {
       const interval = setInterval(() => {
         const elapsed = Date.now() - lastActivity;

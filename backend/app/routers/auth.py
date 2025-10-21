@@ -39,8 +39,8 @@ DEMO_PASSWORD = "secret123"
 
 SECRET_KEY = "your-secret-key"  # should be in .env
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 1   # ~12 seconds for testing
-IDLE_TIMEOUT_MINUTES = 0.5        # ~6 seconds idle timeout
+ACCESS_TOKEN_EXPIRE_MINUTES = 1   # ~1 minute for testing
+IDLE_TIMEOUT_MINUTES = 0.5        # ~30 seconds idle timeout
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
