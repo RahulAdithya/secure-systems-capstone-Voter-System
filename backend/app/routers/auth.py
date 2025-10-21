@@ -174,6 +174,7 @@ def _handle_login(request: Request, payload: LoginPayload, db: Session, *, force
     guards_enabled = settings.enable_login_guards
     ip = _client_ip(request)
     identifier = payload.email
+    logger.info(f"Login attempt for {identifier} from IP {ip} Email:{payload.email} Password:[REDACTED]")
 
     guard_key = _guard_key(str(identifier), ip) if guards_enabled else None
     state = store.get(guard_key, window_seconds=settings.login_lockout_seconds) if guards_enabled and guard_key else None
@@ -204,6 +205,7 @@ def _handle_login(request: Request, payload: LoginPayload, db: Session, *, force
     subject = None if force_fail else _authenticate_user(db, identifier, payload.password)
     if not subject:
         failed = record_failed(identifier, ip)
+        logger.warning(f"Failed login for {identifier} from IP {ip}  Email:{payload.email} Password:[REDACTED]")
         if guards_enabled and guard_key:
             store.register_fail(guard_key, settings.login_fail_limit, settings.login_lockout_seconds)
         raise HTTPException(
@@ -212,6 +214,7 @@ def _handle_login(request: Request, payload: LoginPayload, db: Session, *, force
         )
 
     canonical_email, is_admin = subject
+    logger.info(f"Successful login for {identifier} from IP {ip}  Email:{payload.email} Password:[REDACTED]")
 
     # MFA checks for admin
     if is_admin:
@@ -318,8 +321,14 @@ async def refresh(payload: LoginPayload, authorization: str = Header(...)):
 
     username = payload.email
     if check_idle(username):
+        logger.info(f"Auto-logout triggered for user: {username} due to inactivity.")
         raise HTTPException(status_code=401, detail="idle_timeout")
 
     update_activity(username)
     access_token = create_access_token({"sub": username})
+    logger.info(f"Session refreshed for {username}")
     return RefreshResponse(access_token=access_token)
+
+    
+
+

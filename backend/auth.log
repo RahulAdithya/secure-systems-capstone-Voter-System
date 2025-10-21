@@ -1,2 +1,16 @@
 2025-10-19 19:49:06,581 - INFO - Login attempt: username=admin, password=***, captcha=None, ip=127.0.0.1
 2025-10-19 19:49:15,396 - INFO - Login attempt: username=admin, password=***, captcha=None, ip=127.0.0.1
+2025-10-21 21:10:59,438 - INFO - Login attempt for admin@evp-demo.com from IP 127.0.0.1 Email:admin@evp-demo.com Password:[REDACTED]
+2025-10-21 21:10:59,453 - INFO - Successful login for admin@evp-demo.com from IP 127.0.0.1  Email:admin@evp-demo.com Password:[REDACTED]
+2025-10-21 21:13:24,432 - INFO - Login attempt for admin@evp-demo.com from IP 127.0.0.1 Email:admin@evp-demo.com Password:[REDACTED]
+2025-10-21 21:13:24,435 - INFO - Successful login for admin@evp-demo.com from IP 127.0.0.1  Email:admin@evp-demo.com Password:[REDACTED]
+2025-10-21 21:21:59,651 - INFO - Login attempt for admin@evp-demo.com from IP 127.0.0.1 Email:admin@evp-demo.com Password:[REDACTED]
+2025-10-21 21:21:59,666 - INFO - Successful login for admin@evp-demo.com from IP 127.0.0.1  Email:admin@evp-demo.com Password:[REDACTED]
+2025-10-21 21:22:15,970 - INFO - Login attempt for admin@evp-demo.com from IP 127.0.0.1 Email:admin@evp-demo.com Password:[REDACTED]
+2025-10-21 21:22:15,972 - INFO - Successful login for admin@evp-demo.com from IP 127.0.0.1  Email:admin@evp-demo.com Password:[REDACTED]
+2025-10-21 21:22:32,371 - INFO - Session refreshed for admin@evp-demo.com
+2025-10-21 21:22:37,322 - INFO - Session refreshed for admin@evp-demo.com
+2025-10-21 21:22:38,411 - INFO - Session refreshed for admin@evp-demo.com
+2025-10-21 21:22:39,573 - INFO - Session refreshed for admin@evp-demo.com
+2025-10-21 21:22:40,794 - INFO - Session refreshed for admin@evp-demo.com
+2025-10-21 21:22:41,992 - INFO - Session refreshed for admin@evp-demo.com
