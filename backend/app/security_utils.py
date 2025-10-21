@@ -11,25 +11,22 @@ class User:
         self.role = role
 
 
-def _parse_token(token: str) -> tuple[Optional[str], Optional[Role]]:
-    # Accept legacy fixed tokens and new role:email tokens
+def _role_from_token(token: str) -> Optional[Role]:
+    # Demo mapping for assignment evidence. Replace with JWT later.
     if token == "admin-token":
-        return ("admin@example.com", "admin")
+        return "admin"
     if token == "voter-token":
-        return ("voter@example.com", "voter")
-    if ":" in token:
-        prefix, email = token.split(":", 1)
-        if prefix in {"admin", "voter"} and email:
-            return (email, "admin" if prefix == "admin" else "voter")
-    return (None, None)
+        return "voter"
+    return None
 
 
 def get_current_user(request: Request) -> User:
     auth = request.headers.get("authorization", "")
     parts = auth.split()
     if len(parts) == 2 and parts[0].lower() == "bearer":
-        email, role = _parse_token(parts[1])
-        if role and email:
+        role = _role_from_token(parts[1])
+        if role:
+            email = "admin@example.com" if role == "admin" else "voter@example.com"
             return User(email=email, role=role)
     raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="unauthenticated")
 
@@ -41,4 +38,3 @@ def require_role(need: Role):
         return user
 
     return _dep
-

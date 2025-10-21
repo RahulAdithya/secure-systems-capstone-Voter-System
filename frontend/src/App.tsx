@@ -3,7 +3,11 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 
 import { auth } from "./lib/auth";
 import Login from "./pages/Login";
+import AdminLogin from "./pages/AdminLogin";
 import MfaEnroll from "./pages/MfaEnroll";
+import Signup from "./pages/Signup";
+import AdminDashboard from "./pages/AdminDashboard";
+import UserDashboard from "./pages/UserDashboard";
 
 type ProtectedProps = {
   children: React.ReactNode;
@@ -18,23 +22,18 @@ export default function App(): React.ReactElement {
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<Login />} />
+        <Route path="/admin-login" element={<AdminLogin />} />
+        <Route path="/signup" element={<Signup />} />
         <Route path="/mfa-enroll" element={<MfaEnroll />} />
         <Route
           path="/"
           element={
             <Protected>
-              <div style={{ padding: 24, fontFamily: "system-ui" }}>
-                <h2>Dashboard (Protected)</h2>
-                <p>You are authenticated with MFA.</p>
-                <button
-                  onClick={() => {
-                    auth.clear();
-                    window.location.href = "/login";
-                  }}
-                >
-                  Sign out
-                </button>
-              </div>
+              {auth.isAdmin() ? (
+                <AdminDashboard />
+              ) : (
+                <UserDashboard />
+              )}
             </Protected>
           }
         />
