@@ -13,6 +13,8 @@ class Settings(BaseModel):
     login_lockout_seconds: int = Field(default=30)
     login_captcha_fail_threshold: int = Field(default=1)
     redis_url: Optional[str] = Field(default=None)
+    jwt_secret: str = Field(default="your-secret-key")
+    jwt_algorithm: str = Field(default="HS256")
 
 
 def _env(name: str, default: Optional[str] = None) -> Optional[str]:
@@ -31,12 +33,16 @@ def _load_settings() -> Settings:
     redis = env("REDIS_URL")
     if redis == "":
         redis = None
+    jwt_secret = env("JWT_SECRET", "your-secret-key") or "your-secret-key"
+    jwt_algorithm = env("JWT_ALGORITHM", "HS256") or "HS256"
     return Settings(
         enable_login_guards=enable_login_guards,
         login_fail_limit=login_fail_limit,
         login_lockout_seconds=login_lockout_seconds,
         login_captcha_fail_threshold=login_captcha_fail_threshold,
         redis_url=redis,
+        jwt_secret=jwt_secret,
+        jwt_algorithm=jwt_algorithm,
     )
 
 

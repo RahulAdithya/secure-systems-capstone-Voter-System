@@ -2,9 +2,6 @@
 import io
 from typing import Dict, List, Optional, Tuple
 from datetime import datetime, timedelta
-from jose import jwt, JWTError
-from app.security.logger import auth_logger as logger
-
 import qrcode
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status, Header
 from fastapi.responses import JSONResponse, Response
@@ -15,6 +12,8 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.db_models import User as DBUser
 from app.core.settings import get_settings
+from jose import JWTError, jwt
+
 from app.security.captcha_guard import clear, needs_captcha, record_failed, verify_captcha_token
 from app.security.attempts import store
 from app.security.mfa import (
@@ -26,6 +25,7 @@ from app.security.mfa import (
     verify_totp as mfa_verify_totp,
 )
 from app.security.passwords import hash_password, verify_password
+from app.security.logger import auth_logger as logger
 
 try:
     from app.main import limiter  # type: ignore
@@ -37,8 +37,6 @@ DEMO_ADMIN_EMAIL = "admin@evp-demo.com"
 DEMO_USERNAME = "admin"
 DEMO_PASSWORD = "secret123"
 
-SECRET_KEY = "your-secret-key"  # should be in .env
-ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 1   # ~1 minute for testing
 IDLE_TIMEOUT_MINUTES = 0.5        # ~30 seconds idle timeout
 
@@ -128,6 +126,13 @@ def check_idle(username: str) -> bool:
     return (datetime.utcnow() - last) > timedelta(minutes=IDLE_TIMEOUT_MINUTES)
 
 # ---------------- JWT helpers ----------------
+def _jwt_config() -> tuple[str, str]:
+    settings = get_settings()
+    secret = settings.jwt_secret or "your-secret-key"
+    algorithm = settings.jwt_algorithm or "HS256"
+    return secret, algorithm
+
+
 def create_access_token(data: dict, expires_delta: timedelta = None):
     to_encode = data.copy()
     if expires_delta:
@@ -135,12 +140,14 @@ def create_access_token(data: dict, expires_delta: timedelta = None):
     else:
         expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire, "iat": datetime.utcnow()})
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    secret, algorithm = _jwt_config()
+    encoded_jwt = jwt.encode(to_encode, secret, algorithm=algorithm)
     return encoded_jwt
 
 def verify_token(token: str):
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        secret, algorithm = _jwt_config()
+        payload = jwt.decode(token, secret, algorithms=[algorithm])
         return payload
     except JWTError:
         raise HTTPException(status_code=401, detail="token_expired_or_invalid")
@@ -287,7 +294,8 @@ def _handle_login(request: Request, payload: LoginPayload, db: Session, *, force
         store.register_success(guard_key)
     update_activity(identifier)
 
-    token = create_access_token({"sub": canonical_email})
+    role = "admin" if is_admin else "voter"
+    token = create_access_token({"sub": canonical_email, "role": role})
     return LoginResponse(access_token=token)
 
 # ---------------- Login route ----------------
