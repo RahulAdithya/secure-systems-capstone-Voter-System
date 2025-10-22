@@ -3,6 +3,10 @@ import { isAxiosError } from "axios";
 
 import { api } from "../lib/api";
 import { auth } from "../lib/auth";
+import Card from "../components/ui/Card";
+import Button from "../components/ui/Button";
+import Input from "../components/ui/Input";
+import Label from "../components/ui/Label";
 
 type Step = "creds" | "captcha";
 
@@ -94,6 +98,13 @@ export default function Login(): React.ReactElement {
         detail = err.response?.data?.detail ?? null;
       }
 
+      if (status === 422) {
+        setStep("creds");
+        setError("Enter valid details.");
+        await refreshCaptchaStatus(identifier);
+        return;
+      }
+
       const captchaHeader = readHeader(
         isAxiosError(err) ? err.response?.headers : undefined,
         "X-Captcha-Required",
@@ -146,58 +157,75 @@ export default function Login(): React.ReactElement {
   const displayError = countdownMessage || error;
 
   return (
-    <div style={{ maxWidth: 420, margin: "3rem auto", fontFamily: "system-ui" }}>
-      <h2>User Login</h2>
-      <form onSubmit={handleLogin} style={{ display: "grid", gap: "0.75rem" }}>
-        {(step === "creds" || step === "captcha") && (
-          <>
-            <label>
-              Email or username
-              <input
-                value={identifier}
-                onChange={(e) => setIdentifier(e.target.value)}
-                style={{ width: "100%", marginTop: "0.25rem" }}
-                autoComplete="username"
-                disabled={loading || lockSeconds > 0}
-              />
-            </label>
-            <label>
-              Password
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                style={{ width: "100%", marginTop: "0.25rem" }}
-                autoComplete="current-password"
-                disabled={loading || lockSeconds > 0}
-              />
-            </label>
-            {step === "captcha" && (
-              <label>
-                CAPTCHA token
-                <input
-                  value={captcha}
-                  onChange={(e) => setCaptcha(e.target.value)}
-                  style={{ width: "100%", marginTop: "0.25rem" }}
-                  disabled={loading || lockSeconds > 0}
-                />
-                <small>Enter the token configured on the backend (default: 1234).</small>
-              </label>
+    <div className="grid min-h-[70vh] place-items-center">
+      <Card className="w-full max-w-md p-8">
+        <div className="space-y-6">
+          <div>
+            <h2 className="text-2xl font-semibold">User Login</h2>
+            <p className="mt-2 text-sm text-muted">
+              Enter your credentials to access your voter dashboard. Security checks may require a captcha after failed attempts.
+            </p>
+          </div>
+          <form className="space-y-4" onSubmit={handleLogin} noValidate>
+            {(step === "creds" || step === "captcha") && (
+              <>
+                <div>
+                  <Label htmlFor="identifier">Email or username</Label>
+                  <Input
+                    id="identifier"
+                    value={identifier}
+                    onChange={(e) => setIdentifier(e.target.value)}
+                    autoComplete="username"
+                    disabled={loading || lockSeconds > 0}
+                    placeholder="you@example.com"
+                    required
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="password">Password</Label>
+                  <Input
+                    id="password"
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    autoComplete="current-password"
+                    disabled={loading || lockSeconds > 0}
+                    placeholder="••••••••"
+                    required
+                  />
+                </div>
+                {step === "captcha" && (
+                  <div>
+                    <Label htmlFor="captcha">Captcha token</Label>
+                    <Input
+                      id="captcha"
+                      value={captcha}
+                      onChange={(e) => setCaptcha(e.target.value)}
+                      disabled={loading || lockSeconds > 0}
+                      placeholder="Enter the configured code"
+                      required
+                    />
+                    <p className="mt-2 text-xs text-muted">Enter the token configured on the backend (default: 1234).</p>
+                  </div>
+                )}
+              </>
             )}
-          </>
-        )}
 
-        {displayError && <p style={{ color: "crimson" }}>{displayError}</p>}
-        <button type="submit" disabled={loading || lockSeconds > 0} style={{ padding: "0.6rem 1rem" }}>
-          Continue
-        </button>
-      </form>
-      <div style={{ marginTop: "1.5rem" }}>
-        <a href="/signup">Create account</a>
-      </div>
-      <div style={{ marginTop: "0.75rem" }}>
-        <a href="/admin-login">Admin login</a>
-      </div>
+            {displayError && <p className="text-sm font-medium text-red-500">{displayError}</p>}
+            <Button type="submit" loading={loading} disabled={loading || lockSeconds > 0} className="w-full">
+              Continue
+            </Button>
+          </form>
+          <div className="flex flex-col gap-2 text-sm">
+            <a className="text-primary hover:underline" href="/signup">
+              Create account
+            </a>
+            <a className="text-primary hover:underline" href="/admin-login">
+              Admin login
+            </a>
+          </div>
+        </div>
+      </Card>
     </div>
   );
 }

@@ -2,6 +2,12 @@ import React, { FormEvent, useEffect, useMemo, useState } from "react";
 import { isAxiosError } from "axios";
 import { api } from "../lib/api";
 import { auth } from "../lib/auth";
+import Button from "../components/ui/Button";
+import Card from "../components/ui/Card";
+import Label from "../components/ui/Label";
+
+const USER_INACTIVITY_LIMIT = 60 * 1000;
+const USER_WARNING_TIME = 30 * 1000;
 
 type BallotSummary = { id: number; title: string; options: string[]; totalVotes: number };
 type BallotDetail = BallotSummary;
@@ -18,10 +24,7 @@ export default function UserDashboard(): React.ReactElement {
   const [message, setMessage] = useState<string>("");
   const [error, setError] = useState<string>("");
   const [loading, setLoading] = useState(false);
-  const [logoutMessage, setLogoutMessage] = useState(""); 
-
-  const INACTIVITY_LIMIT = 60 * 1000; // 1 min
-  const WARNING_TIME = 30 * 1000; // 30 sec before logout
+  const [logoutMessage, setLogoutMessage] = useState("");
   const [lastActivity, setLastActivity] = useState(Date.now());
 
   useEffect(() => {
@@ -37,11 +40,11 @@ export default function UserDashboard(): React.ReactElement {
     const interval = setInterval(() => {
       const elapsed = Date.now() - lastActivity;
 
-      if (elapsed >= INACTIVITY_LIMIT) {
+      if (elapsed >= USER_INACTIVITY_LIMIT) {
         auth.clear(); // remove token
         setLogoutMessage("You have been logged out due to inactivity.");
         window.location.href = "/login";
-      } else if (elapsed >= WARNING_TIME) {
+      } else if (elapsed >= USER_WARNING_TIME) {
         setLogoutMessage("⚠️ You will be logged out soon due to inactivity.");
       } else {
         setLogoutMessage("");
@@ -70,9 +73,10 @@ export default function UserDashboard(): React.ReactElement {
   useEffect(() => {
     if (selected == null) return;
     let mounted = true;
+    const fallbackStatus: { data: { already_voted: boolean } } = { data: { already_voted: false } };
     Promise.all([
       api.get<BallotDetail>(`/ballots/${selected}`),
-      api.get<{ already_voted: boolean }>(`/ballots/${selected}/status`).catch(() => ({ data: { already_voted: false } } as any)),
+      api.get<{ already_voted: boolean }>(`/ballots/${selected}/status`).catch(() => fallbackStatus),
     ])
       .then(([ballotRes, statusRes]) => {
         if (!mounted) return;
@@ -119,79 +123,98 @@ export default function UserDashboard(): React.ReactElement {
   }
 
   return (
-    <div style={{ padding: 24, fontFamily: "system-ui", maxWidth: 720, margin: "0 auto" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <h2>Voter Dashboard</h2>
-        <button
+    <div className="space-y-6">
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h2 className="text-3xl font-semibold">Voter Dashboard</h2>
+          <p className="text-sm text-muted">
+            Review active ballots and cast your vote. Activity is monitored and you&apos;ll be logged out after one minute of inactivity.
+          </p>
+        </div>
+        <Button
+          variant="outline"
           onClick={() => {
             auth.clear();
             window.location.href = "/login";
           }}
         >
           Sign out
-        </button>
+        </Button>
       </div>
 
-      {error && <p style={{ color: "crimson" }}>{error}</p>}
+      {error && <p className="text-sm font-medium text-red-500">{error}</p>}
 
-      <div style={{ marginTop: 8 }}>
-        <label>
-          Select ballot
-          <select
-            value={selected ?? ""}
-            onChange={(e) => setSelected(parseInt(e.target.value))}
-            style={{ marginLeft: 8 }}
-          >
-            {ballots.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.title}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
+      <Card className="p-6">
+        <div className="grid gap-3 md:grid-cols-[220px_1fr] md:items-center">
+          <div>
+            <Label htmlFor="ballot-select">Select ballot</Label>
+            <select
+              id="ballot-select"
+              value={selected ?? ""}
+              onChange={(e) => setSelected(Number(e.target.value))}
+              className="mt-1 w-full rounded-xl border border-border bg-card px-3 py-2 text-sm text-text transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
+            >
+              {ballots.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.title}
+                </option>
+              ))}
+            </select>
+          </div>
+          <p className="text-sm text-muted">
+            {detail
+              ? "Choose your preferred option below. You can vote once per ballot."
+              : "Select a ballot to view details and submit your vote."}
+          </p>
+        </div>
+      </Card>
 
       {detail && (
-        <form onSubmit={submitVote} style={{ marginTop: 16, border: "1px solid #ddd", padding: 12, borderRadius: 8 }}>
-          <strong>{detail.title}</strong>
-          <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
-            {detail.options.map((opt, idx) => (
-              <label key={idx} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <input
-                  type="radio"
-                  name="choice"
-                  value={idx}
-                  disabled={hasVoted}
-                  checked={choice === idx}
-                  onChange={() => setChoice(idx)}
-                />
-                <span>{opt}</span>
-              </label>
-            ))}
-          </div>
-          <button type="submit" disabled={loading || hasVoted} style={{ marginTop: 12 }}>
-            {hasVoted ? "Already voted" : "Submit vote"}
-          </button>
-          {message && <p style={{ color: "seagreen", marginTop: 8 }}>{message}</p>}
-        </form>
+        <Card className="p-6">
+          <form className="space-y-5" onSubmit={submitVote}>
+            <div>
+              <h3 className="text-lg font-semibold">{detail.title}</h3>
+              <p className="mt-1 text-sm text-muted">Options below reflect the current tally in real time.</p>
+            </div>
+            <div className="space-y-3">
+              {detail.options.map((opt, idx) => (
+                <label
+                  key={opt}
+                  className={[
+                    "flex cursor-pointer items-center gap-4 rounded-xl border px-4 py-3 transition",
+                    choice === idx ? "border-primary bg-primary/10" : "border-border bg-bg-elev",
+                    hasVoted ? "cursor-not-allowed opacity-70" : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
+                >
+                  <input
+                    type="radio"
+                    name="choice"
+                    value={idx}
+                    disabled={hasVoted}
+                    checked={choice === idx}
+                    onChange={() => setChoice(idx)}
+                    className="h-4 w-4 accent-primary"
+                  />
+                  <span>{opt}</span>
+                </label>
+              ))}
+            </div>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              {message && <p className="text-sm font-medium text-emerald-500">{message}</p>}
+              <Button type="submit" loading={loading} disabled={loading || hasVoted}>
+                {hasVoted ? "Already voted" : "Submit vote"}
+              </Button>
+            </div>
+          </form>
+        </Card>
       )}
       {logoutMessage && (
-        <div
-          style={{
-            position: "fixed",
-            bottom: 20,
-            left: 20,
-            background: "rgba(255, 165, 0, 0.9)",
-            color: "#000",
-            padding: "0.5rem 1rem",
-            borderRadius: 5,
-            boxShadow: "0 2px 6px rgba(0,0,0,0.2)",
-            zIndex: 1000,
-          }}
-        >
+        <div className="fixed bottom-5 left-5 z-50 rounded-full border border-amber-400/70 bg-amber-100/90 px-4 py-2 text-sm text-amber-900 shadow-lg dark:border-amber-300/60 dark:bg-amber-200/90">
           {logoutMessage}
         </div>
-        )}
+      )}
     </div>
   );
 }

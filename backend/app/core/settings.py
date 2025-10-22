@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 
 
 class Settings(BaseModel):
-    enable_login_guards: bool = Field(default=False)
+    enable_login_guards: bool = Field(default=True)
     login_fail_limit: int = Field(default=3)
     login_lockout_seconds: int = Field(default=30)
     login_captcha_fail_threshold: int = Field(default=1)
@@ -24,7 +24,7 @@ def _env(name: str, default: Optional[str] = None) -> Optional[str]:
 
 def _load_settings() -> Settings:
     env = os.getenv
-    enable_login_guards = env("ENABLE_LOGIN_GUARDS", "0") == "1"
+    enable_login_guards = env("ENABLE_LOGIN_GUARDS", "1") == "1"
     login_fail_limit = int(env("LOGIN_FAIL_LIMIT", "3"))
     login_lockout_seconds = int(env("LOGIN_LOCKOUT_SECONDS", "30"))
     login_captcha_fail_threshold = int(env("LOGIN_CAPTCHA_FAIL_THRESHOLD", "1"))
