@@ -115,6 +115,13 @@ class RefreshResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
 
+# ---------------- UX Event payload ----------------
+class UxEventPayload(BaseModel):
+    name: str
+    sid: str
+    ts: Optional[str] = None
+    details: Optional[Dict[str, str]] = None
+
 # ---------------- Idle session tracking ----------------
 idle_sessions = {}
 
@@ -328,6 +335,18 @@ async def refresh(payload: LoginPayload, authorization: str = Header(...)):
     access_token = create_access_token({"sub": username})
     logger.info(f"Session refreshed for {username}")
     return RefreshResponse(access_token=access_token)
+
+# ---------------- UX events (REQ-16 simple) ----------------
+@router.post("/ux", status_code=status.HTTP_204_NO_CONTENT)
+def ux_event(event: UxEventPayload, authorization: str = Header(...)) -> Response:
+    token = authorization.split(" ")[1]
+    claims = verify_token(token)
+    subject = claims.get("sub", "unknown")
+    # Append to same auth logger for easy correlation
+    logger.info(
+        f"UX_EVENT name={event.name} sid={event.sid} ts={event.ts} user={subject}"
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     
 

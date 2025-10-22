@@ -2,6 +2,7 @@ import React, { FormEvent, useEffect, useMemo, useState } from "react";
 import { isAxiosError } from "axios";
 import { api } from "../lib/api";
 import { auth } from "../lib/auth";
+import { emitUx } from "../lib/ux";
 
 type BallotSummary = { id: number; title: string; options: string[]; totalVotes: number };
 type BallotDetail = BallotSummary;
@@ -23,6 +24,11 @@ export default function UserDashboard(): React.ReactElement {
   const INACTIVITY_LIMIT = 60 * 1000; // 1 min
   const WARNING_TIME = 30 * 1000; // 30 sec before logout
   const [lastActivity, setLastActivity] = useState(Date.now());
+
+  // Emit a signed event when voter dashboard is viewed
+  useEffect(() => {
+    emitUx("view_user_dashboard");
+  }, []);
 
   useEffect(() => {
     const resetActivity = () => setLastActivity(Date.now());
@@ -107,6 +113,7 @@ export default function UserDashboard(): React.ReactElement {
       await api.post(`/ballots/${selected}/vote`, { option_index: choice });
       localStorage.setItem(votedKey(selected), "1");
       setMessage("Thanks! Your vote has been recorded.");
+      emitUx("vote_submit", { ballot_id: selected, option_index: choice });
     } catch (err) {
       if (isAxiosError(err) && err.response?.status === 409) {
         setMessage("You have already voted on this ballot.");
@@ -124,6 +131,7 @@ export default function UserDashboard(): React.ReactElement {
         <h2>Voter Dashboard</h2>
         <button
           onClick={() => {
+            emitUx("logout_click", { role: "voter" });
             auth.clear();
             window.location.href = "/login";
           }}

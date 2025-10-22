@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { api } from "../lib/api";
 import { auth } from "../lib/auth";
+import { emitUx } from "../lib/ux";
 
 type Ballot = { id: number; title: string; options: string[]; votes: number[]; totalVotes: number };
 
@@ -23,6 +24,8 @@ export default function AdminDashboard(): React.ReactElement {
   
     
       useEffect(() => {
+      // Emit a signed event when admin dashboard is viewed
+      emitUx("view_admin_dashboard");
       const interval = setInterval(() => {
         const elapsed = Date.now() - lastActivity;
   
@@ -65,6 +68,8 @@ export default function AdminDashboard(): React.ReactElement {
         <h2>Admin Dashboard</h2>
         <button
           onClick={() => {
+            // Emit before clearing token
+            emitUx("logout_click", { role: "admin" });
             auth.clear();
             window.location.href = "/admin-login";
           }}
