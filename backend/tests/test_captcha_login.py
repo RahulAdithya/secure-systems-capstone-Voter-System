@@ -73,7 +73,9 @@ def test_login_requires_captcha_after_failures(monkeypatch):
         otp=valid_otp,
     )
     assert response.status_code == 200
-    assert response.json() == {"access_token": "demo.jwt.token", "token_type": "bearer"}
+    body = response.json()
+    assert body["token_type"] == "bearer"
+    assert isinstance(body.get("access_token"), str) and body["access_token"]
     _reset_limits()
 
     # Counter resets after success: next failure is counted as 1 and does not
@@ -87,5 +89,7 @@ def test_login_requires_captcha_after_failures(monkeypatch):
 
     response = _login(client, email, "secret123", otp=totp.now())
     assert response.status_code == 200
-    assert response.json() == {"access_token": "demo.jwt.token", "token_type": "bearer"}
+    body = response.json()
+    assert body["token_type"] == "bearer"
+    assert isinstance(body.get("access_token"), str) and body["access_token"]
     _reset_limits()

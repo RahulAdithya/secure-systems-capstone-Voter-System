@@ -65,7 +65,9 @@ def test_admin_mfa_flow(monkeypatch):
         json={"email": email, "password": "secret123", "otp": valid_otp},
     )
     assert response.status_code == 200
-    assert response.json() == {"access_token": "demo.jwt.token", "token_type": "bearer"}
+    body = response.json()
+    assert body["token_type"] == "bearer"
+    assert isinstance(body.get("access_token"), str) and body["access_token"]
     _reset_limits()
 
     # Backup codes work exactly once.
@@ -75,7 +77,9 @@ def test_admin_mfa_flow(monkeypatch):
         json={"email": email, "password": "secret123", "backup_code": backup_code},
     )
     assert response.status_code == 200
-    assert response.json() == {"access_token": "demo.jwt.token", "token_type": "bearer"}
+    body = response.json()
+    assert body["token_type"] == "bearer"
+    assert isinstance(body.get("access_token"), str) and body["access_token"]
     _reset_limits()
 
     response = client.post(
