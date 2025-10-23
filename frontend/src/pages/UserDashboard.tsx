@@ -2,6 +2,7 @@ import React, { FormEvent, useEffect, useMemo, useState } from "react";
 import { isAxiosError } from "axios";
 import { api } from "../lib/api";
 import { auth } from "../lib/auth";
+import { emitUx } from "../lib/ux";
 import Button from "../components/ui/Button";
 import Card from "../components/ui/Card";
 import Label from "../components/ui/Label";

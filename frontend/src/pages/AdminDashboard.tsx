@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { api } from "../lib/api";
 import { auth } from "../lib/auth";
+import { emitUx } from "../lib/ux";
 import Button from "../components/ui/Button";
 import Card from "../components/ui/Card";
 
