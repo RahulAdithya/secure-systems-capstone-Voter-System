@@ -89,6 +89,32 @@ async def add_security_headers(request: Request, call_next):
     response.headers.setdefault("Strict-Transport-Security", STRICT_TRANSPORT_SECURITY)
     return response
 
+# ---- HTTP Hardening Middleware (REQ-06) ----
+@app.middleware("http")
+async def check_http_hardening(request: Request, call_next):
+    # Criteria 1: Block PUT/DELETE on public endpoints (405 Method Not Allowed)
+    # This prevents using methods like PUT/DELETE on endpoints that should only be GET/POST.
+    if request.method in ["PUT", "DELETE"]:
+        return JSONResponse(
+            status_code=405,
+            content={"detail": "Method Not Allowed"},
+            headers={"Allow": "GET, POST, OPTIONS"},
+        )
+    
+    # Criteria 2: Block POST without application/json (415 Unsupported Media Type)
+    # This enforces strict content-type for incoming data.
+    if request.method == "POST":
+        content_type = request.headers.get("content-type", "")
+        # Check if Content-Type is missing or doesn't start with application/json
+        if not content_type.lower().startswith("application/json"):
+            return JSONResponse(
+                status_code=415,
+                content={"detail": "Unsupported Media Type. Must be application/json"},
+            )
+
+    response: Response = await call_next(request)
+    return response
+
 # ---- Health endpoint (used by tests and curl) ----
 @app.get("/health")
 def health():
