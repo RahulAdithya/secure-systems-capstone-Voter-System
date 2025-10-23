@@ -26,6 +26,8 @@ export default function AdminDashboard(): React.ReactElement {
   
     
       useEffect(() => {
+      // Emit a signed event when admin dashboard is viewed
+      emitUx("view_admin_dashboard");
       const interval = setInterval(() => {
         const elapsed = Date.now() - lastActivity;
   
@@ -74,6 +76,8 @@ export default function AdminDashboard(): React.ReactElement {
         <Button
           variant="outline"
           onClick={() => {
+            // Emit before clearing token
+            emitUx("logout_click", { role: "admin" });
             auth.clear();
             window.location.href = "/admin-login";
           }}

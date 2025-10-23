@@ -87,6 +87,8 @@ export default function Login(): React.ReactElement {
       const { data } = await api.post(`/auth/login${forceFailSuffix}`, body);
       auth.set(data.access_token);
       auth.setRole("voter");
+      // Emit signed UX event post-login
+      emitUx("login_success", { role: "voter" });
       window.location.href = "/";
     } catch (err) {
       let detail: unknown = null;

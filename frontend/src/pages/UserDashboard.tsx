@@ -27,6 +27,11 @@ export default function UserDashboard(): React.ReactElement {
   const [logoutMessage, setLogoutMessage] = useState("");
   const [lastActivity, setLastActivity] = useState(Date.now());
 
+  // Emit a signed event when voter dashboard is viewed
+  useEffect(() => {
+    emitUx("view_user_dashboard");
+  }, []);
+
   useEffect(() => {
     const resetActivity = () => setLastActivity(Date.now());
     const events = ["mousemove", "keydown", "click"];
@@ -111,6 +116,7 @@ export default function UserDashboard(): React.ReactElement {
       await api.post(`/ballots/${selected}/vote`, { option_index: choice });
       localStorage.setItem(votedKey(selected), "1");
       setMessage("Thanks! Your vote has been recorded.");
+      emitUx("vote_submit", { ballot_id: selected, option_index: choice });
     } catch (err) {
       if (isAxiosError(err) && err.response?.status === 409) {
         setMessage("You have already voted on this ballot.");
@@ -134,6 +140,7 @@ export default function UserDashboard(): React.ReactElement {
         <Button
           variant="outline"
           onClick={() => {
+            emitUx("logout_click", { role: "voter" });
             auth.clear();
             window.location.href = "/login";
           }}

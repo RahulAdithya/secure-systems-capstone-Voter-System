@@ -96,6 +96,8 @@ export default function AdminLogin(): React.ReactElement {
       const { data } = await api.post(`/auth/login${forceFailSuffix}`, body);
       auth.set(data.access_token);
       auth.setRole("admin");
+      // Emit signed UX event post-login
+      emitUx("login_success", { role: "admin" });
       window.location.href = "/";
     } catch (err) {
       let detail: unknown = null;
