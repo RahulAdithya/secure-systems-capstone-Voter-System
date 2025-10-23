@@ -3,6 +3,7 @@ import { isAxiosError } from "axios";
 
 import { api } from "../lib/api";
 import { auth } from "../lib/auth";
+import { emitUx } from "../lib/ux";
 import Card from "../components/ui/Card";
 import Button from "../components/ui/Button";
 import Input from "../components/ui/Input";
