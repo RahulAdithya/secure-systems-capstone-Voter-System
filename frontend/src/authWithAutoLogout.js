@@ -38,12 +38,8 @@ export function resetAutoLogout(updateMessage) {
 }
 
 export async function loginWithAutoLogout(username, password, updateMessage) {
-  try {
-    const data = await apiLogin(username, password);
-    localStorage.setItem("token", data.access_token);
-    startAutoLogout(updateMessage);
-    return data;
-  } catch (err) {
-    throw err;
-  }
+  const data = await apiLogin(username, password);
+  localStorage.setItem("token", data.access_token);
+  startAutoLogout(updateMessage);
+  return data;
 }

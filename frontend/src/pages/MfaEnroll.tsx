@@ -3,6 +3,10 @@ import QRCode from "qrcode.react";
 import { isAxiosError } from "axios";
 
 import { api } from "../lib/api";
+import Card from "../components/ui/Card";
+import Button from "../components/ui/Button";
+import Input from "../components/ui/Input";
+import Label from "../components/ui/Label";
 
 export default function MfaEnroll(): React.ReactElement {
   const [email, setEmail] = useState("admin@evp-demo.com");
@@ -35,46 +39,73 @@ export default function MfaEnroll(): React.ReactElement {
   }
 
   return (
-    <div style={{ maxWidth: 720, margin: "3rem auto", fontFamily: "system-ui" }}>
-      <h1>MFA Enrollment</h1>
-      <form onSubmit={enroll} style={{ display: "grid", gap: "0.75rem", maxWidth: 420 }}>
-        <label>
-          Admin email
-          <input
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            style={{ width: "100%", marginTop: "0.25rem" }}
-          />
-        </label>
-        <label>
-          Password
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            style={{ width: "100%", marginTop: "0.25rem" }}
-          />
-        </label>
-        <button type="submit" disabled={loading} style={{ padding: "0.6rem 1rem", maxWidth: 180 }}>
-          {loading ? "Enrolling..." : "Enroll"}
-        </button>
-      </form>
-      {error && <p style={{ color: "crimson" }}>{error}</p>}
+    <div className="mx-auto flex max-w-4xl flex-col gap-8">
+      <div>
+        <h1 className="text-3xl font-semibold">MFA Enrollment</h1>
+        <p className="mt-2 max-w-2xl text-sm text-muted">
+          Secure the administrator account with TOTP multi-factor authentication. Scan the QR code with your authenticator app
+          and store the backup codes in a safe place.
+        </p>
+      </div>
+      <Card className="p-8">
+        <form className="grid gap-4 md:grid-cols-2" onSubmit={enroll} noValidate>
+          <div className="md:col-span-2 grid gap-4 md:grid-cols-2">
+            <div>
+              <Label htmlFor="mfa-email">Admin email</Label>
+              <Input
+                id="mfa-email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                autoComplete="username"
+                required
+              />
+            </div>
+            <div>
+              <Label htmlFor="mfa-password">Password</Label>
+              <Input
+                id="mfa-password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="current-password"
+                required
+              />
+            </div>
+          </div>
+          {error && <p className="md:col-span-2 text-sm font-medium text-red-500">{error}</p>}
+          <div className="md:col-span-2 flex items-center justify-end">
+            <Button type="submit" loading={loading} disabled={loading}>
+              Enroll
+            </Button>
+          </div>
+        </form>
+      </Card>
       {uri && (
-        <div style={{ marginTop: "2rem" }}>
-          <h3>Scan in Google Authenticator</h3>
-          <QRCode value={uri} size={180} />
-          <pre style={{ wordBreak: "break-all", background: "#f5f5f5", padding: "1rem" }}>{uri}</pre>
-          <h3>Backup Codes</h3>
-          <p>Store these codes somewhere safe. Each one can be used exactly once.</p>
-          <ul>
-            {codes.map((code) => (
-              <li key={code}>
-                <code>{code}</code>
-              </li>
-            ))}
-          </ul>
-        </div>
+        <Card className="p-8">
+          <div className="grid gap-6 md:grid-cols-[200px_1fr]">
+            <div className="flex items-center justify-center rounded-2xl border border-border bg-bg-elev p-4">
+              <QRCode value={uri} size={160} />
+            </div>
+            <div className="space-y-4">
+              <div>
+                <h3 className="text-lg font-semibold">Authenticator setup</h3>
+                <p className="text-sm text-muted">Scan the QR code or copy the URI below to add the account manually.</p>
+              </div>
+              <pre className="overflow-x-auto rounded-xl border border-border bg-bg-elev p-3 text-sm">{uri}</pre>
+              <div>
+                <h3 className="text-lg font-semibold">Backup codes</h3>
+                <p className="text-sm text-muted">Each code can be used once if you lose access to your authenticator app.</p>
+                <ul className="mt-2 grid grid-cols-2 gap-2 text-sm font-mono md:grid-cols-3">
+                  {codes.map((code) => (
+                    <li key={code} className="rounded-lg border border-border bg-bg-elev px-3 py-2 text-center">
+                      {code}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
+        </Card>
       )}
     </div>
   );

@@ -1,0 +1,33 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --bg: #0b1220;
+    --bg-elev: #111827;
+    --text: #e5e7eb;
+    --muted: #9ca3af;
+    --primary: #22d3ee;
+    --ring: #22d3ee;
+    --card: #111827;
+    --border: #1f2937;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * {
+      animation: none !important;
+      transition: none !important;
+    }
+  }
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  @apply bg-bg text-text antialiased;
+}

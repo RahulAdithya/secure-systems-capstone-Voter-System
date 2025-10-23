@@ -1,6 +1,9 @@
 from typing import Literal, Optional
 
 from fastapi import Depends, HTTPException, Request, status
+from jose import JWTError, jwt
+
+from app.core.settings import get_settings
 
 Role = Literal["admin", "voter"]
 
@@ -11,7 +14,29 @@ class User:
         self.role = role
 
 
+def _parse_jwt_token(token: str) -> tuple[Optional[str], Optional[Role]]:
+    settings = get_settings()
+    secret = settings.jwt_secret or "your-secret-key"
+    algorithm = settings.jwt_algorithm or "HS256"
+    try:
+        payload = jwt.decode(token, secret, algorithms=[algorithm])
+    except JWTError:
+        return (None, None)
+
+    email = payload.get("sub")
+    role = payload.get("role")
+    if isinstance(email, str) and role in ("admin", "voter"):
+        return (email, role)  # type: ignore[return-value]
+    return (None, None)
+
+
 def _parse_token(token: str) -> tuple[Optional[str], Optional[Role]]:
+    # First, try new JWT-based tokens.
+    email, role = _parse_jwt_token(token)
+    if email and role:
+        return email, role
+
+    # Fallback to legacy fixed tokens and role:email formats.
     # Accept legacy fixed tokens and new role:email tokens
     if token == "admin-token":
         return ("admin@example.com", "admin")
@@ -41,4 +66,3 @@ def require_role(need: Role):
         return user
 
     return _dep
-

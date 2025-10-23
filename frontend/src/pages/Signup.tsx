@@ -2,6 +2,10 @@ import React, { FormEvent, useState } from "react";
 import { isAxiosError } from "axios";
 
 import { api } from "../lib/api";
+import Card from "../components/ui/Card";
+import Button from "../components/ui/Button";
+import Input from "../components/ui/Input";
+import Label from "../components/ui/Label";
 
 function validateUsername(v: string): string | null {
   const trimmed = v.trim();
@@ -91,65 +95,81 @@ export default function Signup(): React.ReactElement {
   }
 
   return (
-    <div style={{ maxWidth: 460, margin: "3rem auto", fontFamily: "system-ui" }}>
-      <h2>Create Account</h2>
-      <form onSubmit={handleSignup} style={{ display: "grid", gap: "0.75rem" }}>
-        <label>
-          Username
-          <input
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            placeholder="your_name"
-            style={{ width: "100%", marginTop: "0.25rem" }}
-            autoComplete="username"
-          />
-        </label>
-        <label>
-          Email
-          <input
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="you@example.com"
-            style={{ width: "100%", marginTop: "0.25rem" }}
-            autoComplete="email"
-          />
-        </label>
-        <label>
-          Password
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="Strong password"
-            style={{ width: "100%", marginTop: "0.25rem" }}
-            autoComplete="new-password"
-          />
-        </label>
-        <label>
-          Confirm password
-          <input
-            type="password"
-            value={confirm}
-            onChange={(e) => setConfirm(e.target.value)}
-            placeholder="Repeat password"
-            style={{ width: "100%", marginTop: "0.25rem" }}
-            autoComplete="new-password"
-          />
-        </label>
-        <small style={{ color: "#666" }}>
-          Password must be 8–128 chars and include upper, lower, digit, and special.
-        </small>
+    <div className="grid min-h-[70vh] place-items-center">
+      <Card className="w-full max-w-lg p-8">
+        <div className="space-y-6">
+          <div>
+            <h2 className="text-2xl font-semibold">Create Account</h2>
+            <p className="mt-2 text-sm text-muted">
+              Register to vote in the demo environment. Your credentials are stored securely with hashed passwords.
+            </p>
+          </div>
+          <form className="space-y-4" onSubmit={handleSignup} noValidate>
+            <div>
+              <Label htmlFor="signup-username">Username</Label>
+              <Input
+                id="signup-username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                placeholder="your_name"
+                autoComplete="username"
+                required
+              />
+            </div>
+            <div>
+              <Label htmlFor="signup-email">Email</Label>
+              <Input
+                id="signup-email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@example.com"
+                autoComplete="email"
+                required
+                type="email"
+              />
+            </div>
+            <div>
+              <Label htmlFor="signup-password">Password</Label>
+              <Input
+                id="signup-password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Strong password"
+                autoComplete="new-password"
+                required
+              />
+            </div>
+            <div>
+              <Label htmlFor="signup-confirm">Confirm password</Label>
+              <Input
+                id="signup-confirm"
+                type="password"
+                value={confirm}
+                onChange={(e) => setConfirm(e.target.value)}
+                placeholder="Repeat password"
+                autoComplete="new-password"
+                required
+              />
+            </div>
+            <p className="text-xs text-muted">
+              Password must be 8–128 characters and include uppercase, lowercase, digits, and a special symbol.
+            </p>
 
-        {error && <p style={{ color: "crimson" }}>{error}</p>}
-        {success && <p style={{ color: "seagreen" }}>{success}</p>}
+            {error && <p className="text-sm font-medium text-red-500">{error}</p>}
+            {success && <p className="text-sm font-medium text-emerald-500">{success}</p>}
 
-        <button type="submit" disabled={loading} style={{ padding: "0.6rem 1rem" }}>
-          Create account
-        </button>
-      </form>
-      <div style={{ marginTop: "1.5rem" }}>
-        <a href="/login">Back to login</a>
-      </div>
+            <Button type="submit" loading={loading} disabled={loading} className="w-full">
+              Create account
+            </Button>
+          </form>
+          <div className="text-sm">
+            <a className="text-primary hover:underline" href="/login">
+              Back to login
+            </a>
+          </div>
+        </div>
+      </Card>
     </div>
   );
 }

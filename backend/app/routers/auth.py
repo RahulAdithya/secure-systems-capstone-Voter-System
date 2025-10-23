@@ -2,9 +2,6 @@
 import io
 from typing import Dict, List, Optional, Tuple
 from datetime import datetime, timedelta
-from jose import jwt, JWTError
-from app.security.logger import auth_logger as logger
-
 import qrcode
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status, Header
 from fastapi.responses import JSONResponse, Response
@@ -15,6 +12,8 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.db_models import User as DBUser
 from app.core.settings import get_settings
+from jose import JWTError, jwt
+
 from app.security.captcha_guard import clear, needs_captcha, record_failed, verify_captcha_token
 from app.security.attempts import store
 from app.security.mfa import (
@@ -26,6 +25,7 @@ from app.security.mfa import (
     verify_totp as mfa_verify_totp,
 )
 from app.security.passwords import hash_password, verify_password
+from app.security.logger import auth_logger as logger
 
 try:
     from app.main import limiter  # type: ignore
@@ -37,8 +37,6 @@ DEMO_ADMIN_EMAIL = "admin@evp-demo.com"
 DEMO_USERNAME = "admin"
 DEMO_PASSWORD = "secret123"
 
-SECRET_KEY = "your-secret-key"  # should be in .env
-ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 1   # ~1 minute for testing
 IDLE_TIMEOUT_MINUTES = 0.5        # ~30 seconds idle timeout
 
@@ -135,6 +133,13 @@ def check_idle(username: str) -> bool:
     return (datetime.utcnow() - last) > timedelta(minutes=IDLE_TIMEOUT_MINUTES)
 
 # ---------------- JWT helpers ----------------
+def _jwt_config() -> tuple[str, str]:
+    settings = get_settings()
+    secret = settings.jwt_secret or "your-secret-key"
+    algorithm = settings.jwt_algorithm or "HS256"
+    return secret, algorithm
+
+
 def create_access_token(data: dict, expires_delta: timedelta = None):
     to_encode = data.copy()
     if expires_delta:
@@ -142,12 +147,14 @@ def create_access_token(data: dict, expires_delta: timedelta = None):
     else:
         expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire, "iat": datetime.utcnow()})
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    secret, algorithm = _jwt_config()
+    encoded_jwt = jwt.encode(to_encode, secret, algorithm=algorithm)
     return encoded_jwt
 
 def verify_token(token: str):
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        secret, algorithm = _jwt_config()
+        payload = jwt.decode(token, secret, algorithms=[algorithm])
         return payload
     except JWTError:
         raise HTTPException(status_code=401, detail="token_expired_or_invalid")
@@ -159,6 +166,23 @@ def _client_ip(request: Request) -> str:
 
 def _guard_key(email: str, ip: str) -> str:
     return store.key(email, ip)
+
+
+@router.get("/captcha/status")
+def captcha_status(request: Request, email: EmailStr = Query(...)):
+    """
+    Report whether the caller must complete a captcha challenge before logging in.
+    Works for both the new login guards (default) and the legacy in-memory guard.
+    """
+    settings = get_settings()
+    ip = _client_ip(request)
+    if settings.enable_login_guards:
+        key = _guard_key(str(email), ip)
+        state = store.get(key, window_seconds=settings.login_lockout_seconds)
+        required = state.fails >= settings.login_captcha_fail_threshold
+        return {"captcha_required": required}
+    return {"captcha_required": needs_captcha(str(email), ip)}
+
 
 def _authenticate_user(db: Session, identifier: str, password: str) -> Optional[Tuple[str, bool]]:
     try:
@@ -202,26 +226,59 @@ def _handle_login(request: Request, payload: LoginPayload, db: Session, *, force
             )
 
     # Legacy captcha guard if login guards disabled
-    if needs_captcha(identifier, ip) and not verify_captcha_token(payload.captcha_token):
+    if not guards_enabled and needs_captcha(identifier, ip) and not verify_captcha_token(payload.captcha_token):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="captcha_required_or_invalid",
         )
 
+    simulate_fail = bool(force_fail) if guards_enabled else False
+
     # Simulate fail if requested
-    subject = None if force_fail else _authenticate_user(db, identifier, payload.password)
+    subject = None if simulate_fail else _authenticate_user(db, identifier, payload.password)
     if not subject:
+        headers: Dict[str, str] = {}
+        retry_after = 0
+        captcha_required = False
+        if guards_enabled and guard_key:
+            fails, locked_now, retry_after = store.register_fail(
+                guard_key,
+                settings.login_fail_limit,
+                settings.login_lockout_seconds,
+            )
+            if fails >= settings.login_captcha_fail_threshold:
+                headers["X-Captcha-Required"] = "true"
+                captcha_required = True
+            if locked_now:
+                if retry_after:
+                    headers["Retry-After"] = str(retry_after)
+                logger.warning(f"Failed login for {identifier} from IP {ip}  Email:{payload.email} Password:[REDACTED]")
+                return JSONResponse(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    content={"error": "locked", "retry_after": retry_after},
+                    headers=headers or None,
+                )
+
         failed = record_failed(identifier, ip)
         logger.warning(f"Failed login for {identifier} from IP {ip}  Email:{payload.email} Password:[REDACTED]")
-        if guards_enabled and guard_key:
-            store.register_fail(guard_key, settings.login_fail_limit, settings.login_lockout_seconds)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={"error": "invalid_credentials", "failed_attempts": failed},
+            headers=headers or None,
         )
 
+    if guards_enabled and guard_key:
+        current_state = state or store.get(guard_key, window_seconds=settings.login_lockout_seconds)
+        captcha_required = current_state.fails >= settings.login_captcha_fail_threshold
+        if captcha_required and not verify_captcha_token(payload.captcha_token):
+            headers = {"X-Captcha-Required": "true"}
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="captcha_required_or_invalid",
+                headers=headers,
+            )
+
     canonical_email, is_admin = subject
-    logger.info(f"Successful login for {identifier} from IP {ip}  Email:{payload.email} Password:[REDACTED]")
 
     # MFA checks for admin
     if is_admin:
@@ -236,13 +293,16 @@ def _handle_login(request: Request, payload: LoginPayload, db: Session, *, force
         else:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="mfa_required")
 
+    logger.info(f"Successful login for {identifier} from IP {ip}  Email:{payload.email} Password:[REDACTED]")
+
     # Success → clear counters, register success, update idle
     clear(identifier, ip)
     if guards_enabled and guard_key:
         store.register_success(guard_key)
     update_activity(identifier)
 
-    token = create_access_token({"sub": canonical_email})
+    role = "admin" if is_admin else "voter"
+    token = create_access_token({"sub": canonical_email, "role": role})
     return LoginResponse(access_token=token)
 
 # ---------------- Login route ----------------
@@ -349,5 +409,3 @@ def ux_event(event: UxEventPayload, authorization: str = Header(...)) -> Respons
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     
-
-

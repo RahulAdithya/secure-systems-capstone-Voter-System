@@ -8,6 +8,7 @@ import MfaEnroll from "./pages/MfaEnroll";
 import Signup from "./pages/Signup";
 import AdminDashboard from "./pages/AdminDashboard";
 import UserDashboard from "./pages/UserDashboard";
+import AppChrome from "./components/layout/AppChrome";
 
 type ProtectedProps = {
   children: React.ReactNode;
@@ -20,24 +21,26 @@ function Protected({ children }: ProtectedProps) {
 export default function App(): React.ReactElement {
   return (
     <BrowserRouter>
-      <Routes>
-        <Route path="/login" element={<Login />} />
-        <Route path="/admin-login" element={<AdminLogin />} />
-        <Route path="/signup" element={<Signup />} />
-        <Route path="/mfa-enroll" element={<MfaEnroll />} />
-        <Route
-          path="/"
-          element={
-            <Protected>
-              {auth.isAdmin() ? (
-                <AdminDashboard />
-              ) : (
-                <UserDashboard />
-              )}
-            </Protected>
-          }
-        />
-      </Routes>
+      <AppChrome>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          <Route path="/admin-login" element={<AdminLogin />} />
+          <Route path="/signup" element={<Signup />} />
+          <Route path="/mfa-enroll" element={<MfaEnroll />} />
+          <Route
+            path="/"
+            element={
+              <Protected>
+                {auth.isAdmin() ? (
+                  <AdminDashboard />
+                ) : (
+                  <UserDashboard />
+                )}
+              </Protected>
+            }
+          />
+        </Routes>
+      </AppChrome>
     </BrowserRouter>
   );
 }

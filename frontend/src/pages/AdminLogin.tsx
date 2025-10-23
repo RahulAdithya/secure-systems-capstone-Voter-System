@@ -3,7 +3,10 @@ import { isAxiosError } from "axios";
 
 import { api } from "../lib/api";
 import { auth } from "../lib/auth";
-import { emitUx } from "../lib/ux";
+import Card from "../components/ui/Card";
+import Button from "../components/ui/Button";
+import Input from "../components/ui/Input";
+import Label from "../components/ui/Label";
 
 type Step = "creds" | "mfa" | "captcha";
 
@@ -106,6 +109,13 @@ export default function AdminLogin(): React.ReactElement {
         detail = err.response?.data?.detail ?? null;
       }
 
+      if (status === 422) {
+        setStep("creds");
+        setError("Enter valid details.");
+        await refreshCaptchaStatus(email);
+        return;
+      }
+
       const captchaHeader = readHeader(
         isAxiosError(err) ? err.response?.headers : undefined,
         "X-Captcha-Required",
@@ -165,84 +175,101 @@ export default function AdminLogin(): React.ReactElement {
   const displayError = countdownMessage || error;
 
   return (
-    <div style={{ maxWidth: 420, margin: "3rem auto", fontFamily: "system-ui" }}>
-      <h2>Admin Login</h2>
-      <form onSubmit={handleLogin} style={{ display: "grid", gap: "0.75rem" }}>
-        {(step === "creds" || step === "captcha") && (
-          <>
-            <label>
-              Email
-              <input
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                style={{ width: "100%", marginTop: "0.25rem" }}
-                autoComplete="username"
-                disabled={loading || lockSeconds > 0}
-              />
-            </label>
-            <label>
-              Password
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                style={{ width: "100%", marginTop: "0.25rem" }}
-                autoComplete="current-password"
-                disabled={loading || lockSeconds > 0}
-              />
-            </label>
-            {step === "captcha" && (
-              <label>
-                CAPTCHA token
-                <input
-                  value={captcha}
-                  onChange={(e) => setCaptcha(e.target.value)}
-                  style={{ width: "100%", marginTop: "0.25rem" }}
-                  disabled={loading || lockSeconds > 0}
-                />
-                <small>Enter the token configured on the backend (default: 1234).</small>
-              </label>
+    <div className="grid min-h-[70vh] place-items-center">
+      <Card className="w-full max-w-md p-8">
+        <div className="space-y-6">
+          <div>
+            <h2 className="text-2xl font-semibold">Admin Login</h2>
+            <p className="mt-2 text-sm text-muted">
+              Secure access for administrators. You&apos;ll need your password plus a second factor when prompted.
+            </p>
+          </div>
+          <form className="space-y-4" onSubmit={handleLogin} noValidate>
+            {(step === "creds" || step === "captcha") && (
+              <>
+                <div>
+                  <Label htmlFor="admin-email">Email</Label>
+                  <Input
+                    id="admin-email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    autoComplete="username"
+                    disabled={loading || lockSeconds > 0}
+                    placeholder="admin@evp-demo.com"
+                    required
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="admin-password">Password</Label>
+                  <Input
+                    id="admin-password"
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    autoComplete="current-password"
+                    disabled={loading || lockSeconds > 0}
+                    required
+                  />
+                </div>
+                {step === "captcha" && (
+                  <div>
+                    <Label htmlFor="admin-captcha">Captcha token</Label>
+                    <Input
+                      id="admin-captcha"
+                      value={captcha}
+                      onChange={(e) => setCaptcha(e.target.value)}
+                      disabled={loading || lockSeconds > 0}
+                      placeholder="Enter the configured code"
+                      required
+                    />
+                    <p className="mt-2 text-xs text-muted">Enter the token configured on the backend (default: 1234).</p>
+                  </div>
+                )}
+              </>
             )}
-          </>
-        )}
 
-        {step === "mfa" && (
-          <>
-            <label>
-              One-Time Password
-              <input
-                value={otp}
-                onChange={(e) => setOtp(e.target.value)}
-                placeholder="123456"
-                style={{ width: "100%", marginTop: "0.25rem" }}
-                disabled={loading || lockSeconds > 0}
-              />
-            </label>
-            <div style={{ textAlign: "center", color: "#666" }}>or</div>
-            <label>
-              Backup code
-              <input
-                value={backup}
-                onChange={(e) => setBackup(e.target.value.toUpperCase())}
-                placeholder="Backup code"
-                style={{ width: "100%", marginTop: "0.25rem", textTransform: "uppercase" }}
-                disabled={loading || lockSeconds > 0}
-              />
-            </label>
-          </>
-        )}
+            {step === "mfa" && (
+              <div className="space-y-4">
+                <div>
+                  <Label htmlFor="admin-otp">One-time password</Label>
+                  <Input
+                    id="admin-otp"
+                    value={otp}
+                    onChange={(e) => setOtp(e.target.value)}
+                    placeholder="123456"
+                    inputMode="numeric"
+                    disabled={loading || lockSeconds > 0}
+                  />
+                </div>
+                <div className="text-center text-xs uppercase tracking-wide text-muted">or</div>
+                <div>
+                  <Label htmlFor="admin-backup">Backup code</Label>
+                  <Input
+                    id="admin-backup"
+                    value={backup}
+                    onChange={(e) => setBackup(e.target.value.toUpperCase())}
+                    placeholder="AAAA-BBBB"
+                    disabled={loading || lockSeconds > 0}
+                  />
+                </div>
+              </div>
+            )}
 
-        {displayError && <p style={{ color: "crimson" }}>{displayError}</p>}
-        <button type="submit" disabled={loading || lockSeconds > 0} style={{ padding: "0.6rem 1rem" }}>
-          {step === "mfa" ? "Verify MFA" : "Continue"}
-        </button>
-      </form>
-      <div style={{ marginTop: "1.5rem" }}>
-        <a href="/mfa-enroll">Enroll MFA</a>
-      </div>
-      <div style={{ marginTop: "0.75rem" }}>
-        <a href="/login">User login</a>
-      </div>
+            {displayError && <p className="text-sm font-medium text-red-500">{displayError}</p>}
+            <Button type="submit" loading={loading} disabled={loading || lockSeconds > 0} className="w-full">
+              {step === "mfa" ? "Verify MFA" : "Continue"}
+            </Button>
+          </form>
+          <div className="flex flex-col gap-2 text-sm">
+            <a className="text-primary hover:underline" href="/mfa-enroll">
+              Enroll MFA
+            </a>
+            <a className="text-primary hover:underline" href="/login">
+              User login
+            </a>
+          </div>
+        </div>
+      </Card>
     </div>
   );
 }
