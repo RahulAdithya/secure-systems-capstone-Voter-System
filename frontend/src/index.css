@@ -30,4 +30,18 @@ body,
 
 body {
   @apply bg-bg text-text antialiased;
+  /* Subtle gradient backdrop for depth */
+  background-image:
+    radial-gradient(1200px 600px at 100% -10%, rgba(34, 211, 238, 0.05), transparent 60%),
+    radial-gradient(1000px 500px at -10% 110%, rgba(34, 211, 238, 0.06), transparent 60%);
+}
+
+::selection {
+  background: color-mix(in oklab, var(--primary) 30%, transparent);
+  color: var(--text);
+}
+
+/* Avoid mojibake rendering in password placeholders on some systems */
+input[type="password"]::placeholder {
+  color: transparent;
 }

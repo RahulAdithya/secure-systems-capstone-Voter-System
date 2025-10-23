@@ -60,6 +60,13 @@ export default function UserDashboard(): React.ReactElement {
     return () => clearInterval(interval);
   }, [lastActivity]);
 
+  // Normalize any corrupted warning copy from previous data
+  useEffect(() => {
+    if (logoutMessage && logoutMessage.includes("logged out soon")) {
+      setLogoutMessage("You will be logged out soon due to inactivity.");
+    }
+  }, [logoutMessage]);
+
 
   useEffect(() => {
     let mounted = true;

@@ -50,7 +50,10 @@ export default function AppChrome({ children }: Props): React.ReactElement {
     <div className="min-h-screen bg-bg text-text transition-colors duration-200">
       <header className="sticky top-0 z-10 border-b border-border/70 bg-bg/80 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
-          <span className="text-lg font-semibold tracking-tight">Voter System</span>
+          <span className="inline-flex items-center gap-2 text-lg font-semibold tracking-tight">
+            <span className="h-2.5 w-2.5 rounded-full bg-primary shadow-[0_0_12px_rgba(34,211,238,0.8)]" />
+            Voter System
+          </span>
           <nav className="flex items-center gap-3">
             {navLinks.map((link) => (
               <Link key={link.to} to={link.to} className={linkClasses(link.to)}>
